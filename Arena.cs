@@ -21,17 +21,10 @@ namespace Arenas {
         public Arena() {
             objToPtr = new Dictionary<object, IntPtr>();
             ptrToObj = new Dictionary<IntPtr, object>();
-
             pages = new List<IntPtr>();
-            AllocPage(PageSize);
-
             freelists = new Dictionary<Type, IntPtr>();
 
-            ID = Guid.NewGuid();
-            while (arenas.ContainsKey(ID)) {
-                ID = Guid.NewGuid();
-            }
-            arenas[ID] = this;
+            Clear(false);
         }
 
         private void AllocPage(int size) {
@@ -174,7 +167,9 @@ namespace Arenas {
             objToPtr.Clear();
             ptrToObj.Clear();
 
-            arenas.Remove(ID);
+            if (ID != Guid.Empty) {
+                arenas.Remove(ID);
+            }
 
             if (!disposing) {
                 AllocPage(PageSize);

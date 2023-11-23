@@ -9,8 +9,7 @@ namespace Arenas {
         unsafe static void Main(string[] args) {
             UnmanagedRef<Entity> entity;
 
-            using (var arena = new Arena())
-            {
+            using (var arena = new Arena()) {
                 entity = arena.Allocate(new Entity(1, 2, 3));
                 entity.Value->Name = "John Doe";
                 entity.Value->Y = 8;
