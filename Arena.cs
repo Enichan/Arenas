@@ -28,7 +28,18 @@ namespace Arenas {
         }
 
         private void AllocPage(int size) {
+            // create memory and clear
+            Debug.Assert(size == Page.AlignCeil(size, PageSize), "Non page-aligned size in AllocPage");
             var mem = Marshal.AllocHGlobal(size);
+            
+            var cur = (ulong*)mem;
+            var count = size / sizeof(ulong);
+
+            for (int i = 0; i < count; i++, cur++) {
+                *cur = 0;
+            }
+
+            // create page instance and clear
             var ptr = Marshal.AllocHGlobal(sizeof(Page));
             *(Page*)ptr = new Page(mem, size);
             pages.Add(ptr);
@@ -296,7 +307,7 @@ namespace Arenas {
                 }
 
                 var item = Head;
-                Head = GetNext(Head);
+                Head = GetNextFree(Head);
 
                 return item;
             }
@@ -304,21 +315,21 @@ namespace Arenas {
             public void Push(IntPtr item) {
                 var next = Head;
                 Head = item;
-                SetNext(Head, next);
+                SetNextFree(Head, next);
             }
 
             public override string ToString() {
                 return $"Freelist(Head=0x{Head.ToInt64().ToString("x")})";
             }
 
-            public static IntPtr GetNext(IntPtr item) {
+            public static IntPtr GetNextFree(IntPtr item) {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                return header->Next;
+                return header->NextFree;
             }
 
-            public static void SetNext(IntPtr item, IntPtr next) {
+            public static void SetNextFree(IntPtr item, IntPtr next) {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                header->Next = next;
+                header->NextFree = next;
             }
 
             public static void SetHeader(IntPtr item, ItemHeader itemHeader) {
@@ -330,15 +341,34 @@ namespace Arenas {
         [StructLayout(LayoutKind.Sequential)]
         private struct ItemHeader {
             public RuntimeTypeHandle TypeHandle;
-            public IntPtr Next;
+            public IntPtr NextFree;
 
             public ItemHeader(RuntimeTypeHandle typeHandle, IntPtr next) {
                 TypeHandle = typeHandle;
-                Next = next;
+                NextFree = next;
+            }
+
+            public ItemHeader(RuntimeTypeHandle typeHandle, int size) {
+                TypeHandle = typeHandle;
+                NextFree = (IntPtr)size;
             }
 
             public override string ToString() {
-                return $"ItemHeader(Type={(TypeHandle.Value == IntPtr.Zero ? "void" : Type.GetTypeFromHandle(TypeHandle).FullName)}, Next=0x{Next.ToInt64().ToString("x")})";
+                if (TypeHandle.Value == IntPtr.Zero) {
+                    return $"ItemHeader(Type=void*, Size={Size})";
+                }
+                else {
+                    return $"ItemHeader(Type={Type.GetTypeFromHandle(TypeHandle).FullName}, Size={Size}, Next=0x{NextFree.ToInt64().ToString("x")})";
+                }
+            }
+
+            public int Size {
+                get {
+                    if (TypeHandle.Value == IntPtr.Zero) {
+                        return (int)NextFree;
+                    }
+                    return Marshal.SizeOf(Type.GetTypeFromHandle(TypeHandle));
+                }
             }
         }
     }

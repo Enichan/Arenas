@@ -5,14 +5,15 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Arenas {
-    unsafe public struct UnmanagedRef<T> where T : unmanaged, IArenaContents {
+    unsafe readonly public struct UnmanagedRef<T> where T : unmanaged, IArenaContents {
         private readonly T* pointer;
         private readonly int version;
+        private readonly Arena arena;
 
         public UnmanagedRef(T* pointer, Arena arena) {
             this.pointer = pointer;
-            Arena = arena;
-            version = Arena.Version;
+            this.arena = arena;
+            version = this.arena.Version;
         }
 
         public void Free() {
@@ -27,9 +28,9 @@ namespace Arenas {
             return ptr == null ? string.Empty : (*ptr).ToString();
         }
 
-        public Arena Arena { get; private set; }
-        public T* Value { get { return Arena.IsDisposed || Arena.Version != version ? null : pointer; } }
-        public bool HasValue { get { return !Arena.IsDisposed && pointer != null; } }
+        public Arena Arena { get { return arena; } }
+        public T* Value { get { return arena.IsDisposed || arena.Version != version ? null : pointer; } }
+        public bool HasValue { get { return !arena.IsDisposed && pointer != null; } }
         public int Version { get { return version; } }
     }
 }
