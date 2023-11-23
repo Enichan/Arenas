@@ -6,8 +6,8 @@ Proof of concept for arena allocator inside C#. Use by creating a `new Arena()` 
 
 - Arena allocation for multiple unmanaged types
 - All memory is dumped when calling `Clear` or `Dispose` on an arena instance
-- Supports multiple types and memory reuse via freelists
-- Managed C# code can reference unmanaged structs via the `Unmanaged<T>` type
+- Memory reuse via per-type freelists
+- Managed C# code can reference unmanaged structs via the `UnmanagedRef<T>` type
 - Unmanaged C# code can reference managed structs via the `ManagedRef` types
 - Managed references are kept alive by the arena via reference counting
 
