@@ -12,15 +12,14 @@ namespace Arenas {
             using (var arena = new Arena())
             {
                 entity = arena.Allocate(new Entity(1, 2, 3));
-                arena.Allocate(new Entity(5, 6, 7));
-                arena.Free(entity);
-                entity = arena.Allocate(new Entity());
-
                 entity.Value->Name = "John Doe";
                 entity.Value->Y = 8;
                 Console.WriteLine(entity);
+
+                entity.Free();
             }
 
+            entity.Free();
             Console.WriteLine($"Is entity.Value null? {entity.Value == null}");
         }
     }

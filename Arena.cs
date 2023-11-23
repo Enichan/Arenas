@@ -77,7 +77,11 @@ namespace Arenas {
             return ptr;
         }
 
-        public void Free<T>(UnmanagedRef<T> item) where T : unmanaged, IArenaContents {
+        internal void Free<T>(UnmanagedRef<T> item) where T : unmanaged, IArenaContents {
+            if (item.Version != Version) {
+                return;
+            }
+
             if (item.HasValue) {
                 item.Value->Free();
 

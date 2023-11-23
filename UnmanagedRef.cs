@@ -15,6 +15,13 @@ namespace Arenas {
             version = Arena.Version;
         }
 
+        public void Free() {
+            if (Arena.IsDisposed) {
+                return;
+            }
+            Arena.Free(this);
+        }
+
         public override string ToString() {
             var ptr = Value;
             return ptr == null ? string.Empty : (*ptr).ToString();
@@ -23,5 +30,6 @@ namespace Arenas {
         public Arena Arena { get; private set; }
         public T* Value { get { return Arena.IsDisposed || Arena.Version != version ? null : pointer; } }
         public bool HasValue { get { return !Arena.IsDisposed && pointer != null; } }
+        public int Version { get { return version; } }
     }
 }
