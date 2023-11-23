@@ -17,10 +17,10 @@ namespace Arenas {
         }
 
         public void Free() {
-            if (Arena.IsDisposed) {
+            if (arena.IsDisposed) {
                 return;
             }
-            Arena.Free(this);
+            arena.Free(this);
         }
 
         public override string ToString() {
