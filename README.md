@@ -19,3 +19,7 @@ Proof of concept for arena allocator inside C#. Use by creating a `new Arena()` 
 
 - One freelist per size instead of one freelist per size and type
 - Custom per-arena tracing GC
+
+## Should I use this in production?
+
+Absolutely not. Unless you really want to, I'm not your dad. I'd probably use it myself, but I'm a game developer, what do I know?
