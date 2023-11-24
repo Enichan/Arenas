@@ -57,13 +57,24 @@ namespace Arenas {
 
         public UnmanagedRef<T> Allocate<T>(T item) where T : unmanaged, IArenaContents {
             IntPtr ptr;
+            RefVersion version;
 
             // check if there is a freelist for this type and attempt to get an item from it
             Freelist* freelist;
             if ((freelist = GetFreelist(typeof(T))) == null || (ptr = freelist->Pop()) == IntPtr.Zero) {
                 // failed to get an item from freelist so push a new item onto the arena
                 ptr = Push(sizeof(T) + sizeof(ItemHeader)) + sizeof(ItemHeader);
-                Freelist.SetHeader(ptr, new ItemHeader(typeof(T).TypeHandle, IntPtr.Zero)); // clear header
+
+                // increment item version by 1 and set header
+                var prevVersion = Freelist.GetVersion(ptr);
+                version = new RefVersion(prevVersion.Item + 1, Version);
+                Freelist.SetHeader(ptr, new ItemHeader(typeof(T).TypeHandle, IntPtr.Zero, version)); // set header
+            }
+            else {
+                // increment item version by 1
+                var prevVersion = Freelist.GetVersion(ptr);
+                version = new RefVersion(prevVersion.Item + 1, Version);
+                Freelist.SetVersion(ptr, version);
             }
 
             // set item's arena reference and assign to pointer to copy into our item's memory
@@ -71,7 +82,7 @@ namespace Arenas {
             *(T*)ptr = item;
 
             // return pointer as an UnmanagedRef
-            return new UnmanagedRef<T>((T*)ptr, this);
+            return new UnmanagedRef<T>((T*)ptr, this, version);
         }
 
         private IntPtr Push(int size) {
@@ -93,23 +104,23 @@ namespace Arenas {
         }
 
         internal void Free<T>(UnmanagedRef<T> item) where T : unmanaged, IArenaContents {
-            if (item.Version != Version) {
-                // invalid reference, item was already freed so just do nothing
-                return;
-            }
-
             if (!item.HasValue) {
                 // can't free null ya silly bugger
                 return;
             }
+
+            var itemPtr = (IntPtr)item.Value;
 
             // tell the item to free anything it needs to
             // usually this means setting ManagedRefs to null but it could also
             // have to free other unmanaged allocations
             item.Value->Free();
 
+            // set version to indicate item is not valid
+            Freelist.Invalidate(itemPtr);
+
             var page = currentPage;
-            if (page->IsTop((IntPtr)item.Value + sizeof(T))) {
+            if (page->IsTop(itemPtr + sizeof(T))) {
                 // if the item as at the top of the current page then simply pop it off
                 page->Pop(sizeof(T) + sizeof(ItemHeader));
             }
@@ -118,13 +129,13 @@ namespace Arenas {
                 // for reuse
                 Freelist* freelist;
                 if ((freelist = GetFreelist(typeof(T))) == null) {
-                    var ptr = Marshal.AllocHGlobal(sizeof(Freelist));
-                    freelist = (Freelist*)ptr;
+                    var freelistPtr = Marshal.AllocHGlobal(sizeof(Freelist));
+                    freelist = (Freelist*)freelistPtr;
                     *freelist = new Freelist();
-                    freelists[typeof(T)] = ptr;
+                    freelists[typeof(T)] = freelistPtr;
                 }
 
-                freelist->Push((IntPtr)item.Value);
+                freelist->Push(itemPtr);
             }
         }
 
@@ -187,12 +198,26 @@ namespace Arenas {
             return (T)ptrToObj[value];
         }
 
+        public bool VersionsMatch(RefVersion version, IntPtr item) {
+            return version == Freelist.GetVersion(item);
+        }
+
         public void Clear() {
             Clear(false);
         }
 
         private void Clear(bool disposing) {
-            Version++; // invalidate old UnmanagedRefs
+            if (disposing) {
+                Version = 0;
+            }
+            else {
+                Version = (Version + 1) & 0x7FFFFFFF; // invalidate old UnmanagedRefs
+
+                // overflow protection
+                if (Version == 0) {
+                    Version = 1;
+                }
+            }
 
             // free pages
             foreach (var ptr in pages) {
@@ -369,6 +394,21 @@ namespace Arenas {
                 return header->NextFree;
             }
 
+            public static void SetVersion(IntPtr item, RefVersion version) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                header->Version = version;
+            }
+
+            public static RefVersion GetVersion(IntPtr item) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                return header->Version;
+            }
+
+            public static void Invalidate(IntPtr item) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                header->Version = new RefVersion(header->Version.Item, 0);
+            }
+
             public static void SetNextFree(IntPtr item, IntPtr next) {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 header->NextFree = next;
@@ -384,15 +424,18 @@ namespace Arenas {
         private struct ItemHeader {
             public RuntimeTypeHandle TypeHandle;
             public IntPtr NextFree;
+            public RefVersion Version;
 
-            public ItemHeader(RuntimeTypeHandle typeHandle, IntPtr next) {
+            public ItemHeader(RuntimeTypeHandle typeHandle, IntPtr next, RefVersion version) {
                 TypeHandle = typeHandle;
                 NextFree = next;
+                Version = version;
             }
 
-            public ItemHeader(RuntimeTypeHandle typeHandle, int size) {
+            public ItemHeader(RuntimeTypeHandle typeHandle, int size, RefVersion version) {
                 TypeHandle = typeHandle;
                 NextFree = (IntPtr)size;
+                Version = version;
             }
 
             public override string ToString() {

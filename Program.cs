@@ -10,15 +10,20 @@ namespace Arenas {
             UnmanagedRef<Entity> entity;
 
             using (var arena = new Arena()) {
+                var ent2 = arena.Allocate(new Entity());
+
                 entity = arena.Allocate(new Entity(1, 2, 3));
                 entity.Value->Name = "John Doe";
                 entity.Value->Y = 8;
                 Console.WriteLine(entity);
 
+                ent2.Free();
+                arena.Allocate(new Entity());
+
                 entity.Free();
+                Console.WriteLine(entity);
             }
 
-            entity.Free();
             Console.WriteLine($"Is entity.Value null? {entity.Value == null}");
         }
     }

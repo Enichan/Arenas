@@ -48,6 +48,7 @@
     <Compile Include="Arena.cs" />
     <Compile Include="IArenaContents.cs" />
     <Compile Include="ManagedRef.cs" />
+    <Compile Include="RefVersion.cs" />
     <Compile Include="UnmanagedRef.cs" />
     <Compile Include="Entity.cs" />
     <Compile Include="Program.cs" />

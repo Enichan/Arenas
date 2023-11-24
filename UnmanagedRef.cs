@@ -7,19 +7,16 @@ using System.Threading.Tasks;
 namespace Arenas {
     unsafe readonly public struct UnmanagedRef<T> where T : unmanaged, IArenaContents {
         private readonly T* pointer;
-        private readonly int version;
+        private readonly RefVersion version;
         private readonly Arena arena;
 
-        public UnmanagedRef(T* pointer, Arena arena) {
+        public UnmanagedRef(T* pointer, Arena arena, RefVersion version) {
             this.pointer = pointer;
             this.arena = arena;
-            version = this.arena.Version;
+            this.version = version;
         }
 
         public void Free() {
-            if (arena.IsDisposed) {
-                return;
-            }
             arena.Free(this);
         }
 
@@ -29,8 +26,8 @@ namespace Arenas {
         }
 
         public Arena Arena { get { return arena; } }
-        public T* Value { get { return arena.IsDisposed || arena.Version != version ? null : pointer; } }
-        public bool HasValue { get { return !arena.IsDisposed && pointer != null; } }
-        public int Version { get { return version; } }
+        public T* Value { get { return !arena.VersionsMatch(version, (IntPtr)pointer) ? null : pointer; } }
+        public bool HasValue { get { return arena.VersionsMatch(version, (IntPtr)pointer) && pointer != null; } }
+        public RefVersion Version { get { return version; } }
     }
 }
