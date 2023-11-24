@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -21,7 +22,7 @@ namespace Arenas {
         private int enumVersion;
 
         public Arena() {
-            objToPtr = new Dictionary<object, IntPtr>();
+            objToPtr = new Dictionary<object, IntPtr>(ObjectReferenceEqualityComparer.Instance);
             ptrToObj = new Dictionary<IntPtr, object>();
             pages = new List<IntPtr>();
             freelists = new Dictionary<FreelistKey, IntPtr>();
@@ -32,7 +33,7 @@ namespace Arenas {
 
         private void AllocPage(int size) {
             Debug.Assert(size == Page.AlignCeil(size, PageSize), "Non page-aligned size in AllocPage");
-
+            
             // create memory and clear
             var mem = Marshal.AllocHGlobal(size);
             ZeroMem(mem, size);
@@ -417,7 +418,11 @@ namespace Arenas {
         }
 
         public static Arena Get(Guid id) {
-            return arenas[id];
+            Arena arena;
+            if (!arenas.TryGetValue(id, out arena)) {
+                return null;
+            }
+            return arena;
         }
 
         private static TypeHandle GetTypeHandle(Type type) {
@@ -778,6 +783,18 @@ namespace Arenas {
                 pageIndex = 0;
                 offset = 0;
                 current = default(ArenaEntry);
+            }
+        }
+
+        private class ObjectReferenceEqualityComparer : IEqualityComparer<object> {
+            public static readonly ObjectReferenceEqualityComparer Instance = new ObjectReferenceEqualityComparer();
+
+            public new bool Equals(object x, object y) {
+                return ReferenceEquals(x, y);
+            }
+
+            public int GetHashCode(object obj) {
+                return RuntimeHelpers.GetHashCode(obj);
             }
         }
     }

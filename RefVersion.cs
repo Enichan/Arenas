@@ -46,6 +46,6 @@ namespace Arenas {
             return $"RefVersion(Arena={Arena}, Item={Item})";
         }
 
-        public bool IsValid { get { return (Value & 0xFFFFFFFF00000000UL) != 0; } }
+        public bool IsValid { get { return Arena != 0; } }
     }
 }

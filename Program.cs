@@ -20,7 +20,7 @@ namespace Arenas {
                     *(bytes.Value + i) = (byte)i;
                 }
 
-                arena.AllocValue(new Entity(13, 12, 69));
+                arena.Allocate(new Entity(13, 12, 69));
                 arena.Allocate(new Entity(8, 8, 8));
 
                 foreach (var item in arena) {
