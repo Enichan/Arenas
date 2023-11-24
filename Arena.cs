@@ -70,15 +70,15 @@ namespace Arenas {
                 ptr = Push(sizeof(T) + sizeof(ItemHeader)) + sizeof(ItemHeader);
 
                 // increment item version by 1 and set header
-                var prevVersion = Freelist.GetVersion(ptr);
+                var prevVersion = ItemHeader.GetVersion(ptr);
                 version = new RefVersion(prevVersion.Item + 1, Version);
-                Freelist.SetHeader(ptr, new ItemHeader(typeof(T).TypeHandle, IntPtr.Zero, version)); // set header
+                ItemHeader.SetHeader(ptr, new ItemHeader(typeof(T).TypeHandle, IntPtr.Zero, version)); // set header
             }
             else {
                 // increment item version by 1
-                var prevVersion = Freelist.GetVersion(ptr);
+                var prevVersion = ItemHeader.GetVersion(ptr);
                 version = new RefVersion(prevVersion.Item + 1, Version);
-                Freelist.SetVersion(ptr, version);
+                ItemHeader.SetVersion(ptr, version);
             }
 
             // set item's arena reference and assign to pointer to copy into our item's memory
@@ -122,7 +122,7 @@ namespace Arenas {
             item.Value->Free();
 
             // set version to indicate item is not valid
-            Freelist.Invalidate(itemPtr);
+            ItemHeader.Invalidate(itemPtr);
 
             var page = currentPage;
             if (page->IsTop(itemPtr + sizeof(T))) {
@@ -204,7 +204,7 @@ namespace Arenas {
         }
 
         public bool VersionsMatch(RefVersion version, IntPtr item) {
-            return version == Freelist.GetVersion(item);
+            return version == ItemHeader.GetVersion(item);
         }
 
         public void Clear() {
@@ -393,7 +393,7 @@ namespace Arenas {
                 }
 
                 var item = Head;
-                Head = GetNextFree(Head);
+                Head = ItemHeader.GetNextFree(Head);
 
                 return item;
             }
@@ -401,48 +401,11 @@ namespace Arenas {
             public void Push(IntPtr item) {
                 var next = Head;
                 Head = item;
-                SetNextFree(Head, next);
+                ItemHeader.SetNextFree(Head, next);
             }
 
             public override string ToString() {
                 return $"Freelist(Head=0x{Head.ToInt64().ToString("x")})";
-            }
-
-            // helper functions for manipulating an item header, which is always located
-            // in memory right before where the item is allocated
-            public static IntPtr GetNextFree(IntPtr item) {
-                var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                return header->NextFree;
-            }
-
-            public static void SetVersion(IntPtr item, RefVersion version) {
-                var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                header->Version = version;
-            }
-
-            public static RefVersion GetVersion(IntPtr item) {
-                var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                return header->Version;
-            }
-
-            public static void Invalidate(IntPtr item) {
-                var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                header->Version = new RefVersion(header->Version.Item, 0);
-            }
-
-            public static void SetNextFree(IntPtr item, IntPtr next) {
-                var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                header->NextFree = next;
-            }
-
-            public static void SetHeader(IntPtr item, ItemHeader itemHeader) {
-                var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                *header = itemHeader;
-            }
-
-            public static ItemHeader GetHeader(IntPtr item) {
-                var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                return *header;
             }
         }
 
@@ -490,6 +453,43 @@ namespace Arenas {
                     return Type.GetTypeFromHandle(TypeHandle);
                 }
             }
+
+            // helper functions for manipulating an item header, which is always located
+            // in memory right before where the item is allocated
+            public static IntPtr GetNextFree(IntPtr item) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                return header->NextFree;
+            }
+
+            public static void SetVersion(IntPtr item, RefVersion version) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                header->Version = version;
+            }
+
+            public static RefVersion GetVersion(IntPtr item) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                return header->Version;
+            }
+
+            public static void Invalidate(IntPtr item) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                header->Version = new RefVersion(header->Version.Item, 0);
+            }
+
+            public static void SetNextFree(IntPtr item, IntPtr next) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                header->NextFree = next;
+            }
+
+            public static void SetHeader(IntPtr item, ItemHeader itemHeader) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                *header = itemHeader;
+            }
+
+            public static ItemHeader GetHeader(IntPtr item) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                return *header;
+            }
         }
 
         [Serializable]
@@ -524,7 +524,7 @@ namespace Arenas {
                         }
 
                         var ptr = curPage->Address + offset + sizeof(ItemHeader);
-                        var header = Freelist.GetHeader(ptr);
+                        var header = ItemHeader.GetHeader(ptr);
                         offset += header.Size + sizeof(ItemHeader);
 
                         if (header.Version.IsValid) {
