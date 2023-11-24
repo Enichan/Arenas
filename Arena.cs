@@ -24,6 +24,7 @@ namespace Arenas {
             pages = new List<IntPtr>();
             freelists = new Dictionary<Type, IntPtr>();
 
+            // call clear to set up everything we need for use
             Clear(false);
         }
 
@@ -39,12 +40,13 @@ namespace Arenas {
                 *cur = 0;
             }
 
-            // create page instance and clear
+            // create page instance and clear, then add to list of pages
             var ptr = Marshal.AllocHGlobal(sizeof(Page));
             *(Page*)ptr = new Page(mem, size);
             pages.Add(ptr);
         }
 
+        // convenience function cause .NET doesn't let you put pointers in dictionaries
         private Freelist* GetFreelist(Type type) {
             IntPtr ptr;
             if (!freelists.TryGetValue(type, out ptr)) {
@@ -56,15 +58,19 @@ namespace Arenas {
         public UnmanagedRef<T> Allocate<T>(T item) where T : unmanaged, IArenaContents {
             IntPtr ptr;
 
+            // check if there is a freelist for this type and attempt to get an item from it
             Freelist* freelist;
             if ((freelist = GetFreelist(typeof(T))) == null || (ptr = freelist->Pop()) == IntPtr.Zero) {
+                // failed to get an item from freelist so push a new item onto the arena
                 ptr = Push(sizeof(T) + sizeof(ItemHeader)) + sizeof(ItemHeader);
-                Freelist.SetHeader(ptr, new ItemHeader(typeof(T).TypeHandle, IntPtr.Zero));
+                Freelist.SetHeader(ptr, new ItemHeader(typeof(T).TypeHandle, IntPtr.Zero)); // clear header
             }
 
+            // set item's arena reference and assign to pointer to copy into our item's memory
             item.ArenaID = ID;
             *(T*)ptr = item;
 
+            // return pointer as an UnmanagedRef
             return new UnmanagedRef<T>((T*)ptr, this);
         }
 
@@ -72,9 +78,14 @@ namespace Arenas {
             IntPtr ptr;
             var page = currentPage;
 
+            // try to claim size bytes in current page, will return null if out of space
             if ((ptr = page->Push(size)) == IntPtr.Zero) {
+                // out of space, allocate new page, rounding size up to nearest multiple of PageSize
                 AllocPage(Page.AlignCeil(size, PageSize));
                 page = currentPage;
+
+                // claim size bytes in current page
+                // this will always work because we just made sure the new page fits the requested size
                 ptr = page->Push(size);
             }
 
@@ -83,27 +94,37 @@ namespace Arenas {
 
         internal void Free<T>(UnmanagedRef<T> item) where T : unmanaged, IArenaContents {
             if (item.Version != Version) {
+                // invalid reference, item was already freed so just do nothing
                 return;
             }
 
-            if (item.HasValue) {
-                item.Value->Free();
+            if (!item.HasValue) {
+                // can't free null ya silly bugger
+                return;
+            }
 
-                var page = currentPage;
-                if (page->IsTop((IntPtr)item.Value + sizeof(T))) {
-                    page->Pop(sizeof(T) + sizeof(ItemHeader));
-                }
-                else {
-                    Freelist* freelist;
-                    if ((freelist = GetFreelist(typeof(T))) == null) {
-                        var ptr = Marshal.AllocHGlobal(sizeof(Freelist));
-                        freelist = (Freelist*)ptr;
-                        *freelist = new Freelist();
-                        freelists[typeof(T)] = ptr;
-                    }
+            // tell the item to free anything it needs to
+            // usually this means setting ManagedRefs to null but it could also
+            // have to free other unmanaged allocations
+            item.Value->Free();
 
-                    freelist->Push((IntPtr)item.Value);
+            var page = currentPage;
+            if (page->IsTop((IntPtr)item.Value + sizeof(T))) {
+                // if the item as at the top of the current page then simply pop it off
+                page->Pop(sizeof(T) + sizeof(ItemHeader));
+            }
+            else {
+                // otherwise ensure a freelist for the type exists and push the item's location onto it
+                // for reuse
+                Freelist* freelist;
+                if ((freelist = GetFreelist(typeof(T))) == null) {
+                    var ptr = Marshal.AllocHGlobal(sizeof(Freelist));
+                    freelist = (Freelist*)ptr;
+                    *freelist = new Freelist();
+                    freelists[typeof(T)] = ptr;
                 }
+
+                freelist->Push((IntPtr)item.Value);
             }
         }
 
@@ -114,11 +135,15 @@ namespace Arenas {
             }
 
             IntPtr managedPtrBase = IntPtr.Zero;
+
             if (value is object) {
+                // value is not null. get object handle, or create one if none exist
                 if (!objToPtr.TryGetValue(value, out managedPtrBase)) {
+                    // heap allocate object handle and clear to zero
                     managedPtrBase = Marshal.AllocHGlobal(sizeof(ObjectHandle));
                     *(ObjectHandle*)managedPtrBase = new ObjectHandle();
 
+                    // add handle to lookup tables
                     objToPtr[value] = managedPtrBase;
                     ptrToObj[managedPtrBase] = value;
                 }
@@ -133,10 +158,13 @@ namespace Arenas {
             var currentValuePtr = (ObjectHandle*)currentValue;
 
             if (currentValuePtr != null) {
+                // current value of field being set isn't null so decrease refcount and clean up if needed
                 currentValuePtr->RefCount--;
 
-                // can do this here because we've already established the value isn't the same on both sides
+                // can clean up here because we've already established the value isn't the same on both sides
                 if (currentValuePtr->RefCount <= 0) {
+                    // free object handle and remove from lookup tables so .NET's tracing GC can (theoretically)
+                    // collect the object being referenced now that no references to it from within this arena exist
                     Marshal.FreeHGlobal(currentValue);
                     objToPtr.Remove(ptrToObj[currentValue]);
                     ptrToObj.Remove(currentValue);
@@ -144,8 +172,11 @@ namespace Arenas {
             }
 
             if (managedPtr != null) {
+                // increase object handle reference count
                 managedPtr->RefCount++;
             }
+
+            // return new object handle
             return managedPtrBase;
         }
 
@@ -161,14 +192,19 @@ namespace Arenas {
         }
 
         private void Clear(bool disposing) {
-            Version++;
+            Version++; // invalidate old UnmanagedRefs
 
+            // free pages
             foreach (var ptr in pages) {
                 Marshal.FreeHGlobal(ptr);
             }
+
+            // free freelists
             foreach (var ptr in freelists.Values) {
                 Marshal.FreeHGlobal(ptr);
             }
+
+            // free object handles
             foreach (var ptr in ptrToObj.Keys) {
                 Marshal.FreeHGlobal(ptr);
             }
@@ -183,6 +219,7 @@ namespace Arenas {
             }
 
             if (!disposing) {
+                // allocate one page to start and then try and register a unique ID
                 AllocPage(PageSize);
 
                 ID = Guid.NewGuid();
@@ -246,7 +283,7 @@ namespace Arenas {
             public int RefCount;
 
             public override string ToString() {
-                return $"ObjectHandler(RefCount={RefCount})";
+                return $"ObjectHandle(RefCount={RefCount})";
             }
         }
 
@@ -257,6 +294,9 @@ namespace Arenas {
             /// Size in bytes
             /// </summary>
             public int Size;
+            /// <summary>
+            /// Offset in bytes
+            /// </summary>
             public int Offset;
 
             public Page(IntPtr address, int size) {
@@ -322,6 +362,8 @@ namespace Arenas {
                 return $"Freelist(Head=0x{Head.ToInt64().ToString("x")})";
             }
 
+            // helper functions for manipulating an item header, which is always located
+            // in memory right before where the item is allocated
             public static IntPtr GetNextFree(IntPtr item) {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 return header->NextFree;

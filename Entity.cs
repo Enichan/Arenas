@@ -29,11 +29,13 @@ namespace Arenas {
             return $"{GetType().Name}({Name ?? "<unnamed>"}:{X},{Y},{Z})";
         }
 
+        // managed references are routed through the arena using ManagedRef
         public string Name {
             get { return name.Get<string>(Arena.Get(ArenaID)); }
             set { name = name.Set(Arena.Get(ArenaID), value); }
         }
 
+        // yucky boilerplate :(
         public Guid ArenaID { get; private set; }
         Guid IArenaContents.ArenaID { get { return ArenaID; } set { ArenaID = value; } }
     }

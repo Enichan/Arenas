@@ -23,7 +23,7 @@ namespace Arenas {
         }
 
         public override string ToString() {
-            return $"{base.ToString()}({handle})";
+            return $"ManagedRef({handle})";
         }
 
         public static explicit operator IntPtr(ManagedRef ptr) {
