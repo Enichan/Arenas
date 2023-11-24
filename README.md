@@ -17,4 +17,5 @@ Proof of concept for arena allocator inside C#. Use by creating a `new Arena()` 
 
 ## Potential future work
 
+- One freelist per size instead of one freelist per size and type
 - Custom per-arena tracing GC

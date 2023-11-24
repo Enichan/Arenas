@@ -21,10 +21,11 @@ namespace Arenas {
                 }
 
                 arena.Allocate(new Entity(13, 12, 69));
+                arena.Allocate<Entity>(3);
                 arena.Allocate(new Entity(8, 8, 8));
 
                 foreach (var item in arena) {
-                    Console.WriteLine(item);
+                    Console.WriteLine($"{item}, {item.ElementCount} elements");
                 }
 
                 arena.Free(entity);
