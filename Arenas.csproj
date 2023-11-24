@@ -46,6 +46,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Arena.cs" />
+    <Compile Include="ArenaEntry.cs" />
     <Compile Include="IArenaContents.cs" />
     <Compile Include="ManagedRef.cs" />
     <Compile Include="RefVersion.cs" />

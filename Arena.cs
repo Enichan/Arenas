@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -8,7 +9,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Arenas {
-    unsafe public class Arena : IDisposable {
+    unsafe public class Arena : IDisposable, IEnumerable<ArenaEntry> {
         public const int PageSize = 4096;
 
         private Dictionary<object, IntPtr> objToPtr;
@@ -17,6 +18,7 @@ namespace Arenas {
         private List<IntPtr> pages;
         private Dictionary<Type, IntPtr> freelists;
         private Guid ID;
+        private int enumVersion;
 
         public Arena() {
             objToPtr = new Dictionary<object, IntPtr>();
@@ -58,6 +60,8 @@ namespace Arenas {
         public UnmanagedRef<T> Allocate<T>(T item) where T : unmanaged, IArenaContents {
             IntPtr ptr;
             RefVersion version;
+
+            enumVersion++;
 
             // check if there is a freelist for this type and attempt to get an item from it
             Freelist* freelist;
@@ -109,6 +113,7 @@ namespace Arenas {
                 return;
             }
 
+            enumVersion++;
             var itemPtr = (IntPtr)item.Value;
 
             // tell the item to free anything it needs to
@@ -207,6 +212,8 @@ namespace Arenas {
         }
 
         private void Clear(bool disposing) {
+            enumVersion++;
+
             if (disposing) {
                 Version = 0;
             }
@@ -284,6 +291,20 @@ namespace Arenas {
             // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
+        }
+        #endregion
+
+        #region IEnumerable
+        public Enumerator GetEnumerator() {
+            return new Enumerator(this);
+        }
+
+        IEnumerator<ArenaEntry> IEnumerable<ArenaEntry>.GetEnumerator() {
+            return GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() {
+            return GetEnumerator();
         }
         #endregion
 
@@ -418,6 +439,11 @@ namespace Arenas {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 *header = itemHeader;
             }
+
+            public static ItemHeader GetHeader(IntPtr item) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                return *header;
+            }
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -440,10 +466,10 @@ namespace Arenas {
 
             public override string ToString() {
                 if (TypeHandle.Value == IntPtr.Zero) {
-                    return $"ItemHeader(Type=void*, Size={Size})";
+                    return $"ItemHeader(Type=void*, Size={Size}, Version=({Version.Arena},{Version.Item}))";
                 }
                 else {
-                    return $"ItemHeader(Type={Type.GetTypeFromHandle(TypeHandle).FullName}, Size={Size}, Next=0x{NextFree.ToInt64().ToString("x")})";
+                    return $"ItemHeader(Type={Type.GetTypeFromHandle(TypeHandle).FullName}, Size={Size}, Next=0x{NextFree.ToInt64().ToString("x")}, Version=({Version.Arena},{Version.Item}))";
                 }
             }
 
@@ -454,6 +480,97 @@ namespace Arenas {
                     }
                     return Marshal.SizeOf(Type.GetTypeFromHandle(TypeHandle));
                 }
+            }
+
+            public Type Type {
+                get {
+                    if (TypeHandle.Value == IntPtr.Zero) {
+                        return typeof(void*);
+                    }
+                    return Type.GetTypeFromHandle(TypeHandle);
+                }
+            }
+        }
+
+        [Serializable]
+        public struct Enumerator : IEnumerator<ArenaEntry>, IEnumerator {
+            private Arena arena;
+            private int pageIndex;
+            private int offset;
+            private int version;
+            private ArenaEntry current;
+
+            internal Enumerator(Arena arena) {
+                this.arena = arena;
+                pageIndex = 0;
+                offset = 0;
+                version = arena.enumVersion;
+                current = default(ArenaEntry);
+            }
+
+            public void Dispose() {
+            }
+
+            public bool MoveNext() {
+                Arena localArena = arena;
+
+                if (version == localArena.enumVersion && pageIndex < localArena.pages.Count) {
+                    while (pageIndex < localArena.pages.Count) {
+                        Page* curPage = (Page*)localArena.pages[pageIndex];
+
+                        if (offset >= curPage->Offset) {
+                            pageIndex++;
+                            continue;
+                        }
+
+                        var ptr = curPage->Address + offset + sizeof(ItemHeader);
+                        var header = Freelist.GetHeader(ptr);
+                        offset += header.Size + sizeof(ItemHeader);
+
+                        if (header.Version.IsValid) {
+                            current = new ArenaEntry(header.Type, ptr, header.Size);
+                            return true;
+                        }
+                    }
+                }
+
+                return MoveNextRare();
+            }
+
+            private bool MoveNextRare() {
+                if (version != arena.enumVersion) {
+                    throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                }
+
+                pageIndex = arena.pages.Count + 1;
+                offset = 0;
+                current = default(ArenaEntry);
+                return false;
+            }
+
+            public ArenaEntry Current {
+                get {
+                    return current;
+                }
+            }
+
+            object IEnumerator.Current {
+                get {
+                    if ((pageIndex == 0 && offset == 0) || pageIndex == arena.pages.Count + 1) {
+                        throw new InvalidOperationException("Enumeration has either not started or has already finished.");
+                    }
+                    return Current;
+                }
+            }
+
+            void IEnumerator.Reset() {
+                if (version != arena.enumVersion) {
+                    throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                }
+
+                pageIndex = 0;
+                offset = 0;
+                current = default(ArenaEntry);
             }
         }
     }
