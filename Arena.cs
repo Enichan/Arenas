@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace Arenas {
     unsafe public class Arena : IDisposable, IEnumerable<ArenaEntry> {
-        public const int PageSize = 4096;
+        public const int PageSize = 256;
 
         private Dictionary<object, IntPtr> objToPtr;
         private Dictionary<IntPtr, object> ptrToObj;
@@ -732,12 +732,17 @@ namespace Arenas {
 
                         if (offset >= curPage->Offset) {
                             pageIndex++;
+                            offset = 0;
                             continue;
                         }
 
                         var ptr = curPage->Address + offset + sizeof(ItemHeader);
                         var header = ItemHeader.GetHeader(ptr);
                         offset += header.Size + sizeof(ItemHeader);
+
+                        if (header.Type == typeof(Exception)) {
+                            throw new InvalidOperationException("Enumeration found an unknown type; arena memory may be corrupted");
+                        }
 
                         if (header.Version.IsValid) {
                             current = new ArenaEntry(header.Type, ptr, header.Size);
