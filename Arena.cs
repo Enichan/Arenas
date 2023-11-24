@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace Arenas {
     unsafe public class Arena : IDisposable, IEnumerable<ArenaEntry> {
-        public const int PageSize = 256;
+        public const int PageSize = 4096;
 
         private Dictionary<object, IntPtr> objToPtr;
         private Dictionary<IntPtr, object> ptrToObj;
