@@ -15,14 +15,19 @@ namespace Arenas {
                 entity.Value->Y = 8;
                 Console.WriteLine(entity);
 
-                arena.Allocate(new Entity(13, 12, 69));
+                var bytes = arena.AllocValues<byte>(129);
+                for (int i = 0; i < bytes.ElementCount; i++) {
+                    *(bytes.Value + i) = (byte)i;
+                }
+
+                arena.AllocValue(new Entity(13, 12, 69));
                 arena.Allocate(new Entity(8, 8, 8));
 
                 foreach (var item in arena) {
                     Console.WriteLine(item);
                 }
 
-                entity.Free();
+                arena.Free(entity);
                 Console.WriteLine(entity);
             }
 

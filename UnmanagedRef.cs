@@ -5,19 +5,17 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Arenas {
-    unsafe readonly public struct UnmanagedRef<T> where T : unmanaged, IArenaContents {
+    unsafe readonly public struct UnmanagedRef<T> where T : unmanaged {
         private readonly T* pointer;
         private readonly RefVersion version;
         private readonly Arena arena;
+        private readonly int elementCount;
 
-        public UnmanagedRef(T* pointer, Arena arena, RefVersion version) {
+        public UnmanagedRef(T* pointer, Arena arena, RefVersion version, int elementCount) {
             this.pointer = pointer;
             this.arena = arena;
             this.version = version;
-        }
-
-        public void Free() {
-            arena.Free(this);
+            this.elementCount = elementCount;
         }
 
         public override string ToString() {
@@ -29,5 +27,6 @@ namespace Arenas {
         public T* Value { get { return !arena.VersionsMatch(version, (IntPtr)pointer) ? null : pointer; } }
         public bool HasValue { get { return arena.VersionsMatch(version, (IntPtr)pointer) && pointer != null; } }
         public RefVersion Version { get { return version; } }
+        public int ElementCount { get { return elementCount; } }
     }
 }

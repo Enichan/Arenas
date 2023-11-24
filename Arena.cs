@@ -16,7 +16,7 @@ namespace Arenas {
         private Dictionary<IntPtr, object> ptrToObj;
         private bool disposedValue;
         private List<IntPtr> pages;
-        private Dictionary<Type, IntPtr> freelists;
+        private Dictionary<FreelistKey, IntPtr> freelists;
         private Guid ID;
         private int enumVersion;
 
@@ -24,23 +24,18 @@ namespace Arenas {
             objToPtr = new Dictionary<object, IntPtr>();
             ptrToObj = new Dictionary<IntPtr, object>();
             pages = new List<IntPtr>();
-            freelists = new Dictionary<Type, IntPtr>();
+            freelists = new Dictionary<FreelistKey, IntPtr>();
 
             // call clear to set up everything we need for use
             Clear(false);
         }
 
         private void AllocPage(int size) {
-            // create memory and clear
             Debug.Assert(size == Page.AlignCeil(size, PageSize), "Non page-aligned size in AllocPage");
-            var mem = Marshal.AllocHGlobal(size);
-            
-            var cur = (ulong*)mem;
-            var count = size / sizeof(ulong);
 
-            for (int i = 0; i < count; i++, cur++) {
-                *cur = 0;
-            }
+            // create memory and clear
+            var mem = Marshal.AllocHGlobal(size);
+            ZeroMem(mem, size);
 
             // create page instance and clear, then add to list of pages
             var ptr = Marshal.AllocHGlobal(sizeof(Page));
@@ -49,30 +44,37 @@ namespace Arenas {
         }
 
         // convenience function cause .NET doesn't let you put pointers in dictionaries
-        private Freelist* GetFreelist(Type type) {
+        private Freelist* GetFreelist(Type type, int size) {
             IntPtr ptr;
-            if (!freelists.TryGetValue(type, out ptr)) {
+            if (!freelists.TryGetValue(new FreelistKey(type, size), out ptr)) {
                 return null;
             }
             return (Freelist*)ptr;
         }
 
-        public UnmanagedRef<T> Allocate<T>(T item) where T : unmanaged, IArenaContents {
+        private IntPtr Allocate(Type type, long sizeBytes, out RefVersion version) {
             IntPtr ptr;
-            RefVersion version;
 
-            enumVersion++;
+            // make sure size in bytes is at least one word and doesn't overflow
+            if (sizeBytes < sizeof(ulong)) {
+                sizeBytes = sizeof(ulong);
+            }
+            if (sizeBytes > int.MaxValue) {
+                throw new InvalidOperationException("Arena can't allocate size that large");
+            }
+
+            var iSizeBytes = (int)sizeBytes;
 
             // check if there is a freelist for this type and attempt to get an item from it
             Freelist* freelist;
-            if ((freelist = GetFreelist(typeof(T))) == null || (ptr = freelist->Pop()) == IntPtr.Zero) {
+            if ((freelist = GetFreelist(type, iSizeBytes)) == null || (ptr = freelist->Pop()) == IntPtr.Zero) {
                 // failed to get an item from freelist so push a new item onto the arena
-                ptr = Push(sizeof(T) + sizeof(ItemHeader)) + sizeof(ItemHeader);
+                ptr = Push(iSizeBytes + sizeof(ItemHeader)) + sizeof(ItemHeader);
 
                 // increment item version by 1 and set header
                 var prevVersion = ItemHeader.GetVersion(ptr);
                 version = new RefVersion(prevVersion.Item + 1, Version);
-                ItemHeader.SetHeader(ptr, new ItemHeader(GetTypeHandle(typeof(T)), sizeof(T), IntPtr.Zero, version)); // set header
+                ItemHeader.SetHeader(ptr, new ItemHeader(GetTypeHandle(type), iSizeBytes, IntPtr.Zero, version)); // set header
             }
             else {
                 // increment item version by 1
@@ -81,12 +83,76 @@ namespace Arenas {
                 ItemHeader.SetVersion(ptr, version);
             }
 
-            // set item's arena reference and assign to pointer to copy into our item's memory
-            item.ArenaID = ID;
+            return ptr;
+        }
+
+        public UnmanagedRef<T> AllocValues<T>(int count) where T : unmanaged {
+            if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
+                throw new InvalidOperationException("Can't allocate arena items which implement IArenaContents via AllocValues, use Allocate instead");
+            }
+            return _AllocValues<T>(count);
+        }
+
+        public UnmanagedRef<T> _AllocValues<T>(int count) where T : unmanaged {
+            enumVersion++;
+
+            Type type = typeof(T);
+            int elementSize = sizeof(T);
+
+            long sizeBytes = elementSize * count;
+            sizeBytes = NextPowerOfTwo(sizeBytes);
+
+            // allocate items and zero memory
+            RefVersion version;
+            var ptr = Allocate(type, sizeBytes, out version);
+            ZeroMem(ptr, (int)sizeBytes);
+
+            // get actual allocated item count (can be bigger than requested)
+            count = (int)sizeBytes / sizeof(T);
+
+            // return pointer as an UnmanagedRef
+            return new UnmanagedRef<T>((T*)ptr, this, version, count);
+        }
+
+        public UnmanagedRef<T> AllocValue<T>(T item) where T : unmanaged {
+            if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
+                throw new InvalidOperationException("Can't allocate arena item which implements IArenaContents via AllocValue, use Allocate instead");
+            }
+            return _AllocValue(item);
+        }
+
+        private UnmanagedRef<T> _AllocValue<T>(T item) where T : unmanaged {
+            enumVersion++;
+
+            Type type = typeof(T);
+            long sizeBytes = sizeof(T);
+
+            // allocate item
+            RefVersion version;
+            var ptr = Allocate(type, sizeBytes, out version);
+
+            // initialize item value
             *(T*)ptr = item;
 
             // return pointer as an UnmanagedRef
-            return new UnmanagedRef<T>((T*)ptr, this, version);
+            return new UnmanagedRef<T>((T*)ptr, this, version, 1);
+        }
+
+        public UnmanagedRef<T> Allocate<T>(int count) where T : unmanaged, IArenaContents {
+            return _Allocate(_AllocValues<T>(count));
+        }
+
+        public UnmanagedRef<T> Allocate<T>(T item) where T : unmanaged, IArenaContents {
+            return _Allocate(_AllocValue(item));
+        }
+
+        private UnmanagedRef<T> _Allocate<T>(UnmanagedRef<T> items) where T : unmanaged, IArenaContents {
+            var cur = items.Value;
+            for (int i = 0; i < items.ElementCount; i++, cur++) {
+                // set arena ID
+                cur->ArenaID = ID;
+            }
+            return items;
         }
 
         private IntPtr Push(int size) {
@@ -107,19 +173,23 @@ namespace Arenas {
             return ptr;
         }
 
-        internal void Free<T>(UnmanagedRef<T> item) where T : unmanaged, IArenaContents {
-            if (!item.HasValue) {
-                // can't free null ya silly bugger
+        public void FreeValues<T>(UnmanagedRef<T> uref) where T : unmanaged {
+            if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
+                throw new InvalidOperationException("Can't free arena items which implement IArenaContents via FreeValues, use Free instead");
+            }
+            if (!uref.HasValue) {
+                // can't free that ya silly bugger
                 return;
             }
 
             enumVersion++;
-            var itemPtr = (IntPtr)item.Value;
+            _FreeValues(uref);
+        }
 
-            // tell the item to free anything it needs to
-            // usually this means setting ManagedRefs to null but it could also
-            // have to free other unmanaged allocations
-            item.Value->Free();
+        private void _FreeValues<T>(UnmanagedRef<T> uref) where T : unmanaged {
+            var itemPtr = (IntPtr)uref.Value;
+            var sizeBytes = ItemHeader.GetSize(itemPtr);
+            var type = typeof(T);
 
             // set version to indicate item is not valid
             ItemHeader.Invalidate(itemPtr);
@@ -133,15 +203,34 @@ namespace Arenas {
                 // otherwise ensure a freelist for the type exists and push the item's location onto it
                 // for reuse
                 Freelist* freelist;
-                if ((freelist = GetFreelist(typeof(T))) == null) {
+                if ((freelist = GetFreelist(type, sizeBytes)) == null) {
                     var freelistPtr = Marshal.AllocHGlobal(sizeof(Freelist));
                     freelist = (Freelist*)freelistPtr;
                     *freelist = new Freelist();
-                    freelists[typeof(T)] = freelistPtr;
+                    freelists[new FreelistKey(type, sizeBytes)] = freelistPtr;
                 }
 
                 freelist->Push(itemPtr);
             }
+        }
+
+        internal void Free<T>(UnmanagedRef<T> uref) where T : unmanaged, IArenaContents {
+            if (!uref.HasValue) {
+                // can't free that ya silly bugger
+                return;
+            }
+
+            enumVersion++;
+
+            // tell the items to free anything they need to
+            // usually this means setting ManagedRefs to null but it could also
+            // have to free other unmanaged allocations
+            var item = uref.Value;
+            for (int i = 0; i < uref.ElementCount; i++, item++) {
+                item->Free();
+            }
+
+            _FreeValues(uref);
         }
 
         public IntPtr SetOutsidePtr<T>(T value, IntPtr currentValue) where T : class {
@@ -322,9 +411,9 @@ namespace Arenas {
             typeToHandle = new Dictionary<Type, TypeHandle>();
             handleToType = new Dictionary<TypeHandle, Type>();
 
-            // handle 0 should be void* type
-            typeToHandle[typeof(void*)] = new TypeHandle(0);
-            handleToType[new TypeHandle(0)] = typeof(void*); 
+            // handle 0 should be void type
+            typeToHandle[typeof(void)] = new TypeHandle(0);
+            handleToType[new TypeHandle(0)] = typeof(void); 
         }
 
         public static Arena Get(Guid id) {
@@ -349,6 +438,32 @@ namespace Arenas {
                 return typeof(Exception);
             }
             return type;
+        }
+
+        // http://graphics.stanford.edu/%7Eseander/bithacks.html#RoundUpPowerOf2
+        private static long NextPowerOfTwo(long v) {
+            v--;
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v |= v >> 32;
+            v++;
+            return v;
+        }
+
+        private static void ZeroMem(IntPtr ptr, int size) {
+            if (size % sizeof(ulong) != 0) {
+                throw new ArgumentException("Size must be divisible by sizeof(ulong)", nameof(size));
+            }
+
+            var cur = (ulong*)ptr;
+            var count = size / sizeof(ulong);
+
+            for (int i = 0; i < count; i++, cur++) {
+                *cur = 0;
+            }
         }
         #endregion
 
@@ -478,9 +593,14 @@ namespace Arenas {
                 return header->Version;
             }
 
-            public static void Invalidate(IntPtr item) {
+            public static void SetSize(IntPtr item, int size) {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                header->Version = new RefVersion(header->Version.Item, 0);
+                header->Size = size;
+            }
+
+            public static int GetSize(IntPtr item) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                return header->Size;
             }
 
             public static void SetNextFree(IntPtr item, IntPtr next) {
@@ -496,6 +616,11 @@ namespace Arenas {
             public static ItemHeader GetHeader(IntPtr item) {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 return *header;
+            }
+
+            public static void Invalidate(IntPtr item) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                header->Version = new RefVersion(header->Version.Item, 0);
             }
         }
 
@@ -530,6 +655,47 @@ namespace Arenas {
 
             public override string ToString() {
                 return GetTypeFromHandle(this).ToString();
+            }
+        }
+
+        private readonly struct FreelistKey : IEquatable<FreelistKey> {
+            public readonly Type Type;
+            public readonly int Size;
+
+            public FreelistKey(Type type, int size) {
+                Type = type;
+                Size = size;
+            }
+
+            public override bool Equals(object obj) {
+                return obj is FreelistKey key &&
+                       Type.Equals(key.Type) &&
+                       Size == key.Size;
+            }
+
+            public bool Equals(FreelistKey other) {
+                return
+                       Type.Equals(other.Type) &&
+                       Size == other.Size;
+            }
+
+            public override int GetHashCode() {
+                int hashCode = 1281792895;
+                hashCode = hashCode * -1521134295 + Type.GetHashCode();
+                hashCode = hashCode * -1521134295 + Size.GetHashCode();
+                return hashCode;
+            }
+
+            public static bool operator ==(FreelistKey left, FreelistKey right) {
+                return left.Equals(right);
+            }
+
+            public static bool operator !=(FreelistKey left, FreelistKey right) {
+                return !(left == right);
+            }
+
+            public override string ToString() {
+                return $"Freelist(Type={Type}, Size={Size})";
             }
         }
 

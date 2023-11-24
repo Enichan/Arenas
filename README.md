@@ -1,6 +1,6 @@
 # Arenas
 
-Proof of concept for arena allocator inside C#. Use by creating a `new Arena()` and calling `Allocate` with blittable structs that implement `IArenaContents`, and `Free` with instances of `UnmanagedRef<T>`. Also supports `Clear` and `Dispose`.
+Proof of concept for arena allocator inside C#. Use by creating a `new Arena()` and calling `Allocate` with blittable structs that implement `IArenaContents` or `AllocValue(s)` with unmanaged types that do not implement `IArenaContents`, and `Free` or `FreeValues` with instances of `UnmanagedRef<T>`. Also supports `Clear` and `Dispose`.
 
 ## Features
 
@@ -12,8 +12,9 @@ Proof of concept for arena allocator inside C#. Use by creating a `new Arena()` 
 - Managed references are kept alive by the arena via reference counting
 - `UnmanagedRef<T>` returns null if the reference is stale
 - Can enumerate over all entries in the arena
+- Allocate any count of items
+- Allocate generic buffers of any size by allocating using `AllocValues<byte>(sizeInBytes)`
 
 ## Potential future work
 
 - Custom per-arena tracing GC
-- Freestyle allocations of a certain size
