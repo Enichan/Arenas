@@ -19,7 +19,7 @@ namespace Arenas {
                 arena.Allocate(new Entity(8, 8, 8));
 
                 foreach (var item in arena) {
-                    Console.WriteLine(*(Entity*)item.Ptr);
+                    Console.WriteLine(item);
                 }
 
                 entity.Free();

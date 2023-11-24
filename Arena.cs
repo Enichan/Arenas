@@ -72,7 +72,7 @@ namespace Arenas {
                 // increment item version by 1 and set header
                 var prevVersion = ItemHeader.GetVersion(ptr);
                 version = new RefVersion(prevVersion.Item + 1, Version);
-                ItemHeader.SetHeader(ptr, new ItemHeader(typeof(T).TypeHandle, IntPtr.Zero, version)); // set header
+                ItemHeader.SetHeader(ptr, new ItemHeader(GetTypeHandle(typeof(T)), sizeof(T), IntPtr.Zero, version)); // set header
             }
             else {
                 // increment item version by 1
@@ -314,13 +314,41 @@ namespace Arenas {
 
         #region Static
         private static Dictionary<Guid, Arena> arenas;
+        private static Dictionary<Type, TypeHandle> typeToHandle;
+        private static Dictionary<TypeHandle, Type> handleToType;
 
         static Arena() {
             arenas = new Dictionary<Guid, Arena>();
+            typeToHandle = new Dictionary<Type, TypeHandle>();
+            handleToType = new Dictionary<TypeHandle, Type>();
+
+            // handle 0 should be void* type
+            typeToHandle[typeof(void*)] = new TypeHandle(0);
+            handleToType[new TypeHandle(0)] = typeof(void*); 
         }
 
         public static Arena Get(Guid id) {
             return arenas[id];
+        }
+
+        private static TypeHandle GetTypeHandle(Type type) {
+            TypeHandle handle;
+            if (!typeToHandle.TryGetValue(type, out handle)) {
+                typeToHandle[type] = handle = new TypeHandle(typeToHandle.Count);
+                if (handle.Value == 0) {
+                    throw new OverflowException("Arena.TypeHandle value overflow: too many types");
+                }
+                handleToType[handle] = type;
+            }
+            return handle;
+        }
+
+        private static Type GetTypeFromHandle(TypeHandle handle) {
+            Type type;
+            if (!handleToType.TryGetValue(handle, out type)) {
+                return typeof(Exception);
+            }
+            return type;
         }
         #endregion
 
@@ -411,46 +439,25 @@ namespace Arenas {
 
         [StructLayout(LayoutKind.Sequential)]
         private struct ItemHeader {
-            public RuntimeTypeHandle TypeHandle;
+            public TypeHandle TypeHandle;
+            public int Size;
             public IntPtr NextFree;
             public RefVersion Version;
 
-            public ItemHeader(RuntimeTypeHandle typeHandle, IntPtr next, RefVersion version) {
+            public ItemHeader(TypeHandle typeHandle, int size, IntPtr next, RefVersion version) {
                 TypeHandle = typeHandle;
+                Size = size;
                 NextFree = next;
                 Version = version;
             }
 
-            public ItemHeader(RuntimeTypeHandle typeHandle, int size, RefVersion version) {
-                TypeHandle = typeHandle;
-                NextFree = (IntPtr)size;
-                Version = version;
-            }
-
             public override string ToString() {
-                if (TypeHandle.Value == IntPtr.Zero) {
-                    return $"ItemHeader(Type=void*, Size={Size}, Version=({Version.Arena},{Version.Item}))";
-                }
-                else {
-                    return $"ItemHeader(Type={Type.GetTypeFromHandle(TypeHandle).FullName}, Size={Size}, Next=0x{NextFree.ToInt64().ToString("x")}, Version=({Version.Arena},{Version.Item}))";
-                }
-            }
-
-            public int Size {
-                get {
-                    if (TypeHandle.Value == IntPtr.Zero) {
-                        return (int)NextFree;
-                    }
-                    return Marshal.SizeOf(Type.GetTypeFromHandle(TypeHandle));
-                }
+                return $"ItemHeader(Type={GetTypeFromHandle(TypeHandle).FullName}, Size={Size}, Next=0x{NextFree.ToInt64().ToString("x")}, Version=({Version.Arena},{Version.Item}))";
             }
 
             public Type Type {
                 get {
-                    if (TypeHandle.Value == IntPtr.Zero) {
-                        return typeof(void*);
-                    }
-                    return Type.GetTypeFromHandle(TypeHandle);
+                    return GetTypeFromHandle(TypeHandle);
                 }
             }
 
@@ -489,6 +496,40 @@ namespace Arenas {
             public static ItemHeader GetHeader(IntPtr item) {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 return *header;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private readonly struct TypeHandle : IEquatable<TypeHandle> {
+            public readonly int Value;
+
+            public TypeHandle(int value) {
+                Value = value;
+            }
+
+            public override bool Equals(object obj) {
+                return obj is TypeHandle handle &&
+                       Value == handle.Value;
+            }
+
+            public bool Equals(TypeHandle other) {
+                return Value == other.Value;
+            }
+
+            public override int GetHashCode() {
+                return Value.GetHashCode();
+            }
+
+            public static bool operator ==(TypeHandle left, TypeHandle right) {
+                return left.Equals(right);
+            }
+
+            public static bool operator !=(TypeHandle left, TypeHandle right) {
+                return !(left == right);
+            }
+
+            public override string ToString() {
+                return GetTypeFromHandle(this).ToString();
             }
         }
 
