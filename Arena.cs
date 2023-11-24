@@ -740,8 +740,8 @@ namespace Arenas {
                         var header = ItemHeader.GetHeader(ptr);
                         offset += header.Size + sizeof(ItemHeader);
 
-                        if (header.Type == typeof(Exception)) {
-                            throw new InvalidOperationException("Enumeration found an unknown type; arena memory may be corrupted");
+                        if (header.Type == typeof(Exception) || header.Size < 0 || offset < 0 || offset > curPage->Offset) {
+                            throw new InvalidOperationException("Enumeration encountered an error; arena memory may be corrupted");
                         }
 
                         if (header.Version.IsValid) {
