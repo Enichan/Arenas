@@ -10,6 +10,8 @@ Proof of concept for arena allocator inside C#. Use by creating a `new Arena()` 
 - Managed C# code can reference unmanaged structs via the `UnmanagedRef<T>` type
 - Unmanaged C# code can reference managed structs via the `ManagedRef` type
 - Managed references are kept alive by the arena via reference counting
+- `UnmanagedRef<T>` returns null if the reference is stale
+- Can enumerate over all entries in the arena
 
 ## Potential future work
 
