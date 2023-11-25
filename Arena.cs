@@ -16,41 +16,30 @@ namespace Arenas {
         private Dictionary<object, IntPtr> objToPtr;
         private Dictionary<IntPtr, object> ptrToObj;
         private bool disposedValue;
-        private List<IntPtr> pages;
-        private Dictionary<FreelistKey, IntPtr> freelists;
+        private List<Page> pages;
+        private Dictionary<FreelistKey, Freelist> freelists;
         private Guid ID;
         private int enumVersion;
 
         public Arena() {
             objToPtr = new Dictionary<object, IntPtr>(ObjectReferenceEqualityComparer.Instance);
             ptrToObj = new Dictionary<IntPtr, object>();
-            pages = new List<IntPtr>();
-            freelists = new Dictionary<FreelistKey, IntPtr>();
+            pages = new List<Page>();
+            freelists = new Dictionary<FreelistKey, Freelist>();
 
             // call clear to set up everything we need for use
             Clear(false);
         }
 
-        private void AllocPage(int size) {
+        private Page AllocPage(int size) {
             Debug.Assert(size == Page.AlignCeil(size, PageSize), "Non page-aligned size in AllocPage");
             
-            // create memory and clear
             var mem = Marshal.AllocHGlobal(size);
             ZeroMem(mem, size);
 
-            // create page instance and clear, then add to list of pages
-            var ptr = Marshal.AllocHGlobal(sizeof(Page));
-            *(Page*)ptr = new Page(mem, size);
-            pages.Add(ptr);
-        }
-
-        // convenience function cause .NET doesn't let you put pointers in dictionaries
-        private Freelist* GetFreelist(Type type, int size) {
-            IntPtr ptr;
-            if (!freelists.TryGetValue(new FreelistKey(type, size), out ptr)) {
-                return null;
-            }
-            return (Freelist*)ptr;
+            var page = new Page(mem, size);
+            pages.Add(new Page(mem, size));
+            return page;
         }
 
         private IntPtr Allocate(Type type, long sizeBytes, out RefVersion version) {
@@ -67,8 +56,9 @@ namespace Arenas {
             var iSizeBytes = (int)sizeBytes;
 
             // check if there is a freelist for this type and attempt to get an item from it
-            Freelist* freelist;
-            if ((freelist = GetFreelist(type, iSizeBytes)) == null || (ptr = freelist->Pop()) == IntPtr.Zero) {
+            var flKey = new FreelistKey(type, iSizeBytes);
+            Freelist freelist;
+            if (!freelists.TryGetValue(flKey, out freelist) || (ptr = freelist.Pop()) == IntPtr.Zero) {
                 // failed to get an item from freelist so push a new item onto the arena
                 ptr = Push(iSizeBytes + sizeof(ItemHeader)) + sizeof(ItemHeader);
 
@@ -78,6 +68,8 @@ namespace Arenas {
                 ItemHeader.SetHeader(ptr, new ItemHeader(GetTypeHandle(type), iSizeBytes, IntPtr.Zero, version)); // set header
             }
             else {
+                freelists[flKey] = freelist;
+
                 // increment item version by 1
                 var prevVersion = ItemHeader.GetVersion(ptr);
                 version = new RefVersion(prevVersion.Item + 1, Version);
@@ -158,19 +150,19 @@ namespace Arenas {
 
         private IntPtr Push(int size) {
             IntPtr ptr;
-            var page = currentPage;
+            var page = pages.Last();
 
             // try to claim size bytes in current page, will return null if out of space
-            if ((ptr = page->Push(size)) == IntPtr.Zero) {
+            if ((ptr = page.Push(size)) == IntPtr.Zero) {
                 // out of space, allocate new page, rounding size up to nearest multiple of PageSize
-                AllocPage(Page.AlignCeil(size, PageSize));
-                page = currentPage;
+                page = AllocPage(Page.AlignCeil(size, PageSize));
 
                 // claim size bytes in current page
                 // this will always work because we just made sure the new page fits the requested size
-                ptr = page->Push(size);
+                ptr = page.Push(size);
             }
 
+            pages.SetLast(page);
             return ptr;
         }
 
@@ -195,23 +187,24 @@ namespace Arenas {
             // set version to indicate item is not valid
             ItemHeader.Invalidate(itemPtr);
 
-            var page = currentPage;
-            if (page->IsTop(itemPtr + sizeof(T))) {
+            var page = pages.Last();
+            if (page.IsTop(itemPtr + sizeof(T))) {
                 // if the item as at the top of the current page then simply pop it off
-                page->Pop(sizeof(T) + sizeof(ItemHeader));
+                page.Pop(sizeof(T) + sizeof(ItemHeader));
+                pages.SetLast(page);
             }
             else {
                 // otherwise ensure a freelist for the type exists and push the item's location onto it
                 // for reuse
-                Freelist* freelist;
-                if ((freelist = GetFreelist(type, sizeBytes)) == null) {
-                    var freelistPtr = Marshal.AllocHGlobal(sizeof(Freelist));
-                    freelist = (Freelist*)freelistPtr;
-                    *freelist = new Freelist();
-                    freelists[new FreelistKey(type, sizeBytes)] = freelistPtr;
+                var flKey = new FreelistKey(type, sizeBytes);
+                Freelist freelist;
+
+                if (!freelists.TryGetValue(flKey, out freelist)) {
+                    freelist = new Freelist();
                 }
 
-                freelist->Push(itemPtr);
+                freelist.Push(itemPtr);
+                freelists[flKey] = freelist;
             }
         }
 
@@ -316,16 +309,6 @@ namespace Arenas {
                 }
             }
 
-            // free pages
-            foreach (var ptr in pages) {
-                Marshal.FreeHGlobal(ptr);
-            }
-
-            // free freelists
-            foreach (var ptr in freelists.Values) {
-                Marshal.FreeHGlobal(ptr);
-            }
-
             // free object handles
             foreach (var ptr in ptrToObj.Keys) {
                 Marshal.FreeHGlobal(ptr);
@@ -398,7 +381,6 @@ namespace Arenas {
         }
         #endregion
 
-        private Page* currentPage { get { return (Page*)pages[pages.Count - 1]; } }
         public bool IsDisposed { get { return disposedValue; } }
         public int Version { get; private set; }
 
@@ -406,6 +388,7 @@ namespace Arenas {
         private static Dictionary<Guid, Arena> arenas;
         private static Dictionary<Type, TypeHandle> typeToHandle;
         private static Dictionary<TypeHandle, Type> handleToType;
+        private static Arena handleArena;
 
         static Arena() {
             arenas = new Dictionary<Guid, Arena>();
@@ -414,7 +397,11 @@ namespace Arenas {
 
             // handle 0 should be void type
             typeToHandle[typeof(void)] = new TypeHandle(0);
-            handleToType[new TypeHandle(0)] = typeof(void); 
+            handleToType[new TypeHandle(0)] = typeof(void);
+
+            // use an arena to store ObjectHandles, this works because this
+            // arena won't have any outside references
+            handleArena = new Arena();
         }
 
         public static Arena Get(Guid id) {
@@ -728,19 +715,19 @@ namespace Arenas {
 
                 if (version == localArena.enumVersion && pageIndex < localArena.pages.Count) {
                     while (pageIndex < localArena.pages.Count) {
-                        Page* curPage = (Page*)localArena.pages[pageIndex];
+                        Page curPage = localArena.pages[pageIndex];
 
-                        if (offset >= curPage->Offset) {
+                        if (offset >= curPage.Offset) {
                             pageIndex++;
                             offset = 0;
                             continue;
                         }
 
-                        var ptr = curPage->Address + offset + sizeof(ItemHeader);
+                        var ptr = curPage.Address + offset + sizeof(ItemHeader);
                         var header = ItemHeader.GetHeader(ptr);
                         offset += header.Size + sizeof(ItemHeader);
 
-                        if (header.Type == typeof(Exception) || header.Size < 0 || offset < 0 || offset > curPage->Offset) {
+                        if (header.Type == typeof(Exception) || header.Size < 0 || offset < 0 || offset > curPage.Offset) {
                             throw new InvalidOperationException("Enumeration encountered an error; arena memory may be corrupted");
                         }
 
