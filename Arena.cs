@@ -389,7 +389,6 @@ namespace Arenas {
         private static Dictionary<Guid, Arena> arenas;
         private static Dictionary<Type, TypeHandle> typeToHandle;
         private static Dictionary<TypeHandle, Type> handleToType;
-        private static Arena handleArena;
 
         static Arena() {
             arenas = new Dictionary<Guid, Arena>();
@@ -399,10 +398,6 @@ namespace Arenas {
             // handle 0 should be void type
             typeToHandle[typeof(void)] = new TypeHandle(0);
             handleToType[new TypeHandle(0)] = typeof(void);
-
-            // use an arena to store ObjectHandles, this works because this
-            // arena won't have any outside references
-            handleArena = new Arena();
         }
 
         public static Arena Get(Guid id) {
