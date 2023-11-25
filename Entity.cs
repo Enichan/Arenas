@@ -27,7 +27,7 @@ namespace Arenas {
 
         // managed references are routed through the arena using ManagedRef
         public string Name {
-            get => name.Get<string>();
+            get { return name.Get<string>(); }
             set { name = name.Set(Arena.Get(ArenaID), value); }
         }
 

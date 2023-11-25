@@ -48,7 +48,7 @@ namespace Arenas {
         }
 
         public override string ToString() {
-            return $"ArenaEntry(Type={Type}, Ptr=0x{Ptr.ToInt64().ToString("x")}, Size={Size})";
+            return $"ArenaEntry(Type={Type}, Ptr=0x{Ptr.ToInt64():x}, Size={Size})";
         }
 
         public int ElementCount { get { return Size / Marshal.SizeOf(Type); } }

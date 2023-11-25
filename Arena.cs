@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -221,19 +222,18 @@ namespace Arenas {
             _FreeValues(uref);
         }
 
-        internal IntPtr SetOutsidePtr<T>(T value, IntPtr currentHandlePtr) where T : class
-        {
+        internal IntPtr SetOutsidePtr<T>(T value, IntPtr currentHandlePtr) where T : class {
             if (!(value is object) && currentHandlePtr == IntPtr.Zero) {
                 // both null, do nothing
                 return IntPtr.Zero;
             }
 
-            ObjectEntry managedEntry = default;
+            var managedEntry = default(ObjectEntry);
 
             if (value is object) {
                 // value is not null. get object handle, or create one if none exist
                 if (!objToPtr.TryGetValue(value, out managedEntry)) {
-                    // heap allocate object handle and clear to zero
+                    // allocate object handle
                     managedEntry.Handle = GCHandle.Alloc(value, GCHandleType.Weak);
 
                     // add handle to lookup tables
@@ -241,11 +241,9 @@ namespace Arenas {
                 }
             }
 
-            if (managedEntry.Handle.IsAllocated)
-            {
+            if (managedEntry.Handle.IsAllocated) {
                 var managedHandlePtr = GCHandle.ToIntPtr(managedEntry.Handle);
-                if (managedHandlePtr == currentHandlePtr)
-                {
+                if (managedHandlePtr == currentHandlePtr) {
                     // same value, do nothing
                     return managedHandlePtr;
                 }
@@ -257,9 +255,7 @@ namespace Arenas {
                 Debug.Assert(currentTarget != null);
 
                 ObjectEntry currentManagedEntry;
-
-                if (!objToPtr.TryGetValue(currentTarget, out currentManagedEntry))
-                {
+                if (!objToPtr.TryGetValue(currentTarget, out currentManagedEntry)) {
                     throw new InvalidOperationException("Object handle is allocated but not in lookup tables");
                 }
 
@@ -268,14 +264,12 @@ namespace Arenas {
 
                 // can clean up here because we've already established the value isn't the same on both sides
                 if (currentManagedEntry.RefCount <= 0) {
-
                     // free object handle and remove from lookup tables so .NET's tracing GC can (theoretically)
                     // collect the object being referenced now that no references to it from within this arena exist
                     currentHandle.Free();
                     objToPtr.Remove(currentTarget);
                 }
-                else
-                {
+                else {
                     objToPtr[currentTarget] = currentManagedEntry; // update entry in lookup tables
                 }
             }
@@ -316,11 +310,9 @@ namespace Arenas {
             }
 
             // free GCHandles
-            foreach (var entry in objToPtr.Values)
-            {
+            foreach (var entry in objToPtr.Values) {
                 var gcHandle = entry.Handle;
-                if (gcHandle.IsAllocated)
-                {
+                if (gcHandle.IsAllocated) {
                     gcHandle.Free();
                 }
             }
@@ -469,15 +461,12 @@ namespace Arenas {
         #endregion
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct ObjectEntry
-        {
+        private struct ObjectEntry {
             public GCHandle Handle;
-
             public int RefCount;
 
-            public override string ToString()
-            {
-                return $"ObjectEntry(Handle=0x{GCHandle.ToIntPtr(Handle).ToInt64():X16}, RefCount={RefCount})";
+            public override string ToString() {
+                return $"ObjectEntry(Handle=0x{GCHandle.ToIntPtr(Handle).ToInt64():x}, RefCount={RefCount})";
             }
         }
 
@@ -519,7 +508,7 @@ namespace Arenas {
             }
 
             public override string ToString() {
-                return $"Page(Address=0x{Address.ToInt64().ToString("x")}, Size={Size}, Offset={Offset})";
+                return $"Page(Address=0x{Address.ToInt64():x}, Size={Size}, Offset={Offset})";
             }
 
             public static int AlignFloor(int addr, int size) {
@@ -553,7 +542,7 @@ namespace Arenas {
             }
 
             public override string ToString() {
-                return $"Freelist(Head=0x{Head.ToInt64().ToString("x")})";
+                return $"Freelist(Head=0x{Head.ToInt64():x})";
             }
         }
 
@@ -572,7 +561,7 @@ namespace Arenas {
             }
 
             public override string ToString() {
-                return $"ItemHeader(Type={GetTypeFromHandle(TypeHandle).FullName}, Size={Size}, Next=0x{NextFree.ToInt64().ToString("x")}, Version=({Version.Arena},{Version.Item}))";
+                return $"ItemHeader(Type={GetTypeFromHandle(TypeHandle).FullName}, Size={Size}, Next=0x{NextFree.ToInt64():x}, Version=({Version.Arena},{Version.Item}))";
             }
 
             public Type Type {
