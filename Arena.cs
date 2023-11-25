@@ -13,14 +13,14 @@ namespace Arenas {
         private Dictionary<object, ObjectEntry> objToPtr;
         private bool disposedValue;
         private List<Page> pages;
-        private Dictionary<FreelistKey, Freelist> freelists;
+        private Dictionary<int, Freelist> freelists;
         private Guid ID;
         private int enumVersion;
 
         public Arena() {
             objToPtr = new Dictionary<object, ObjectEntry>(ObjectReferenceEqualityComparer.Instance);
             pages = new List<Page>();
-            freelists = new Dictionary<FreelistKey, Freelist>();
+            freelists = new Dictionary<int, Freelist>();
 
             // call clear to set up everything we need for use
             Clear(false);
@@ -51,9 +51,8 @@ namespace Arenas {
             var iSizeBytes = (int)sizeBytes;
 
             // check if there is a freelist for this type and attempt to get an item from it
-            var flKey = new FreelistKey(type, iSizeBytes);
             Freelist freelist;
-            if (!freelists.TryGetValue(flKey, out freelist) || (ptr = freelist.Pop()) == IntPtr.Zero) {
+            if (!freelists.TryGetValue(iSizeBytes, out freelist) || (ptr = freelist.Pop()) == IntPtr.Zero) {
                 // failed to get an item from freelist so push a new item onto the arena
                 ptr = Push(iSizeBytes + sizeof(ItemHeader)) + sizeof(ItemHeader);
 
@@ -63,12 +62,13 @@ namespace Arenas {
                 ItemHeader.SetHeader(ptr, new ItemHeader(GetTypeHandle(type), iSizeBytes, IntPtr.Zero, version)); // set header
             }
             else {
-                freelists[flKey] = freelist;
+                freelists[iSizeBytes] = freelist;
 
                 // increment item version by 1
                 var prevVersion = ItemHeader.GetVersion(ptr);
                 version = new RefVersion(prevVersion.Item + 1, Version);
                 ItemHeader.SetVersion(ptr, version);
+                ItemHeader.SetTypeHandle(ptr, GetTypeHandle(type));
             }
 
             return ptr;
@@ -177,29 +177,26 @@ namespace Arenas {
         private void _FreeValues<T>(UnmanagedRef<T> uref) where T : unmanaged {
             var itemPtr = (IntPtr)uref.Value;
             var sizeBytes = ItemHeader.GetSize(itemPtr);
-            var type = typeof(T);
 
             // set version to indicate item is not valid
             ItemHeader.Invalidate(itemPtr);
 
             var page = pages.Last();
-            if (page.IsTop(itemPtr + sizeof(T))) {
+            if (page.IsTop(itemPtr + sizeBytes)) {
                 // if the item as at the top of the current page then simply pop it off
-                page.Pop(sizeof(T) + sizeof(ItemHeader));
+                page.Pop(sizeBytes + sizeof(ItemHeader));
                 pages.SetLast(page);
             }
             else {
                 // otherwise ensure a freelist for the type exists and push the item's location onto it
                 // for reuse
-                var flKey = new FreelistKey(type, sizeBytes);
                 Freelist freelist;
-
-                if (!freelists.TryGetValue(flKey, out freelist)) {
+                if (!freelists.TryGetValue(sizeBytes, out freelist)) {
                     freelist = new Freelist();
                 }
 
                 freelist.Push(itemPtr);
-                freelists[flKey] = freelist;
+                freelists[sizeBytes] = freelist;
             }
         }
 
@@ -567,11 +564,6 @@ namespace Arenas {
 
             // helper functions for manipulating an item header, which is always located
             // in memory right before where the item is allocated
-            public static IntPtr GetNextFree(IntPtr item) {
-                var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                return header->NextFree;
-            }
-
             public static void SetVersion(IntPtr item, RefVersion version) {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 header->Version = version;
@@ -595,6 +587,21 @@ namespace Arenas {
             public static void SetNextFree(IntPtr item, IntPtr next) {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 header->NextFree = next;
+            }
+
+            public static IntPtr GetNextFree(IntPtr item) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                return header->NextFree;
+            }
+
+            public static void SetTypeHandle(IntPtr item, TypeHandle handle) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                header->TypeHandle = handle;
+            }
+
+            public static TypeHandle GetTypeHandle(IntPtr item) {
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                return header->TypeHandle;
             }
 
             public static void SetHeader(IntPtr item, ItemHeader itemHeader) {
@@ -644,47 +651,6 @@ namespace Arenas {
 
             public override string ToString() {
                 return GetTypeFromHandle(this).ToString();
-            }
-        }
-
-        private readonly struct FreelistKey : IEquatable<FreelistKey> {
-            public readonly Type Type;
-            public readonly int Size;
-
-            public FreelistKey(Type type, int size) {
-                Type = type;
-                Size = size;
-            }
-
-            public override bool Equals(object obj) {
-                return obj is FreelistKey key &&
-                       Type.Equals(key.Type) &&
-                       Size == key.Size;
-            }
-
-            public bool Equals(FreelistKey other) {
-                return
-                       Type.Equals(other.Type) &&
-                       Size == other.Size;
-            }
-
-            public override int GetHashCode() {
-                int hashCode = 1281792895;
-                hashCode = hashCode * -1521134295 + Type.GetHashCode();
-                hashCode = hashCode * -1521134295 + Size.GetHashCode();
-                return hashCode;
-            }
-
-            public static bool operator ==(FreelistKey left, FreelistKey right) {
-                return left.Equals(right);
-            }
-
-            public static bool operator !=(FreelistKey left, FreelistKey right) {
-                return !(left == right);
-            }
-
-            public override string ToString() {
-                return $"Freelist(Type={Type}, Size={Size})";
             }
         }
 

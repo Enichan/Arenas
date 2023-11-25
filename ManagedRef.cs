@@ -19,7 +19,7 @@ namespace Arenas {
 
         public T Get<T>() where T : class {
             if (handle == IntPtr.Zero) {
-                throw new InvalidOperationException("ManagedRef is null");
+                return null;
             }
             GCHandle gcHandle = GCHandle.FromIntPtr(handle);
             return (T)gcHandle.Target;
