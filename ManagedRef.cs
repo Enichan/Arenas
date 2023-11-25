@@ -1,13 +1,9 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Arenas {
     [StructLayout(LayoutKind.Sequential)]
-    public struct ManagedRef {
+    public readonly struct ManagedRef {
         private readonly IntPtr handle;
 
         public ManagedRef(IntPtr handle) {
@@ -21,11 +17,12 @@ namespace Arenas {
             return new ManagedRef(arena.SetOutsidePtr(value, handle));
         }
 
-        public T Get<T>(Arena arena) where T : class {
-            if (arena == null) {
-                throw new InvalidOperationException("Arena cannot be null in ManagedRef.Get");
+        public T Get<T>() where T : class {
+            if (handle == IntPtr.Zero) {
+                throw new InvalidOperationException("ManagedRef is null");
             }
-            return arena.GetOutsidePtr<T>(handle);
+            GCHandle gcHandle = GCHandle.FromIntPtr(handle);
+            return (T)gcHandle.Target;
         }
 
         public override string ToString() {

@@ -1,9 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Arenas {
     [StructLayout(LayoutKind.Sequential)]
@@ -31,7 +27,7 @@ namespace Arenas {
 
         // managed references are routed through the arena using ManagedRef
         public string Name {
-            get { return name.Get<string>(Arena.Get(ArenaID)); }
+            get => name.Get<string>();
             set { name = name.Set(Arena.Get(ArenaID), value); }
         }
 

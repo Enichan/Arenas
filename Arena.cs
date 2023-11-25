@@ -2,19 +2,14 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Arenas {
     unsafe public class Arena : IDisposable, IEnumerable<ArenaEntry> {
         public const int PageSize = 4096;
 
-        private Dictionary<object, IntPtr> objToPtr;
-        private Dictionary<IntPtr, object> ptrToObj;
+        private Dictionary<object, ObjectEntry> objToPtr;
         private bool disposedValue;
         private List<Page> pages;
         private Dictionary<FreelistKey, Freelist> freelists;
@@ -22,8 +17,7 @@ namespace Arenas {
         private int enumVersion;
 
         public Arena() {
-            objToPtr = new Dictionary<object, IntPtr>(ObjectReferenceEqualityComparer.Instance);
-            ptrToObj = new Dictionary<IntPtr, object>();
+            objToPtr = new Dictionary<object, ObjectEntry>(ObjectReferenceEqualityComparer.Instance);
             pages = new List<Page>();
             freelists = new Dictionary<FreelistKey, Freelist>();
 
@@ -227,63 +221,75 @@ namespace Arenas {
             _FreeValues(uref);
         }
 
-        public IntPtr SetOutsidePtr<T>(T value, IntPtr currentValue) where T : class {
-            if (!(value is object) && currentValue == IntPtr.Zero) {
+        internal IntPtr SetOutsidePtr<T>(T value, IntPtr currentHandlePtr) where T : class
+        {
+            if (!(value is object) && currentHandlePtr == IntPtr.Zero) {
                 // both null, do nothing
                 return IntPtr.Zero;
             }
 
-            IntPtr managedPtrBase = IntPtr.Zero;
+            ObjectEntry managedEntry = default;
 
             if (value is object) {
                 // value is not null. get object handle, or create one if none exist
-                if (!objToPtr.TryGetValue(value, out managedPtrBase)) {
+                if (!objToPtr.TryGetValue(value, out managedEntry)) {
                     // heap allocate object handle and clear to zero
-                    managedPtrBase = Marshal.AllocHGlobal(sizeof(ObjectHandle));
-                    *(ObjectHandle*)managedPtrBase = new ObjectHandle();
+                    managedEntry.Handle = GCHandle.Alloc(value, GCHandleType.Weak);
 
                     // add handle to lookup tables
-                    objToPtr[value] = managedPtrBase;
-                    ptrToObj[managedPtrBase] = value;
+                    objToPtr[value] = managedEntry;
                 }
             }
 
-            if (managedPtrBase == currentValue) {
-                // same value, do nothing
-                return managedPtrBase;
+            if (managedEntry.Handle.IsAllocated)
+            {
+                var managedHandlePtr = GCHandle.ToIntPtr(managedEntry.Handle);
+                if (managedHandlePtr == currentHandlePtr)
+                {
+                    // same value, do nothing
+                    return managedHandlePtr;
+                }
             }
 
-            var managedPtr = (ObjectHandle*)managedPtrBase;
-            var currentValuePtr = (ObjectHandle*)currentValue;
+            if (currentHandlePtr != IntPtr.Zero) {
+                var currentHandle = GCHandle.FromIntPtr(currentHandlePtr);
+                var currentTarget = currentHandle.Target;
+                Debug.Assert(currentTarget != null);
 
-            if (currentValuePtr != null) {
+                ObjectEntry currentManagedEntry;
+
+                if (!objToPtr.TryGetValue(currentTarget, out currentManagedEntry))
+                {
+                    throw new InvalidOperationException("Object handle is allocated but not in lookup tables");
+                }
+
                 // current value of field being set isn't null so decrease refcount and clean up if needed
-                currentValuePtr->RefCount--;
+                currentManagedEntry.RefCount--;
 
                 // can clean up here because we've already established the value isn't the same on both sides
-                if (currentValuePtr->RefCount <= 0) {
+                if (currentManagedEntry.RefCount <= 0) {
+
                     // free object handle and remove from lookup tables so .NET's tracing GC can (theoretically)
                     // collect the object being referenced now that no references to it from within this arena exist
-                    Marshal.FreeHGlobal(currentValue);
-                    objToPtr.Remove(ptrToObj[currentValue]);
-                    ptrToObj.Remove(currentValue);
+                    currentHandle.Free();
+                    objToPtr.Remove(currentTarget);
+                }
+                else
+                {
+                    objToPtr[currentTarget] = currentManagedEntry; // update entry in lookup tables
                 }
             }
 
-            if (managedPtr != null) {
+            if (managedEntry.Handle.IsAllocated) {
                 // increase object handle reference count
-                managedPtr->RefCount++;
+                managedEntry.RefCount++;
+                objToPtr[value] = managedEntry; // update entry in lookup tables
+
+                // return new object handle
+                return GCHandle.ToIntPtr(managedEntry.Handle);
             }
 
-            // return new object handle
-            return managedPtrBase;
-        }
-
-        public T GetOutsidePtr<T>(IntPtr value) where T : class {
-            if (value == IntPtr.Zero) {
-                return null;
-            }
-            return (T)ptrToObj[value];
+            return IntPtr.Zero;
         }
 
         public bool VersionsMatch(RefVersion version, IntPtr item) {
@@ -309,15 +315,19 @@ namespace Arenas {
                 }
             }
 
-            // free object handles
-            foreach (var ptr in ptrToObj.Keys) {
-                Marshal.FreeHGlobal(ptr);
+            // free GCHandles
+            foreach (var entry in objToPtr.Values)
+            {
+                var gcHandle = entry.Handle;
+                if (gcHandle.IsAllocated)
+                {
+                    gcHandle.Free();
+                }
             }
 
             pages.Clear();
             freelists.Clear();
             objToPtr.Clear();
-            ptrToObj.Clear();
 
             if (ID != Guid.Empty) {
                 arenas.Remove(ID);
@@ -349,7 +359,6 @@ namespace Arenas {
                 pages = null;
                 freelists = null;
                 objToPtr = null;
-                ptrToObj = null;
 
                 disposedValue = true;
             }
@@ -460,11 +469,15 @@ namespace Arenas {
         #endregion
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct ObjectHandle {
+        private struct ObjectEntry
+        {
+            public GCHandle Handle;
+
             public int RefCount;
 
-            public override string ToString() {
-                return $"ObjectHandle(RefCount={RefCount})";
+            public override string ToString()
+            {
+                return $"ObjectEntry(Handle=0x{GCHandle.ToIntPtr(Handle).ToInt64():X16}, RefCount={RefCount})";
             }
         }
 
