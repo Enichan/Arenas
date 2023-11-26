@@ -12,7 +12,7 @@ namespace Arenas {
 
         public ManagedRef Set<T>(Arena arena, T value) where T : class {
             if (arena == null) {
-                throw new InvalidOperationException("Arena cannot be null in ManagedRef.Set");
+                throw new NullReferenceException("Arena cannot be null in ManagedRef.Set");
             }
             return new ManagedRef(arena.SetOutsidePtr(value, handle));
         }
