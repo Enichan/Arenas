@@ -1,6 +1,8 @@
-# Arenas
+# Arenas: Arena allocators for C#/CSharp
 
-Proof of concept for arena allocator inside C#. Use by creating a `new Arena()` and calling `Allocate` with blittable structs that implement `IArenaContents` or `AllocValue(s)` with unmanaged types that do not implement `IArenaContents`, and `Free` or `FreeValues` with instances of `UnmanagedRef<T>`. Also supports `Clear` and `Dispose`.
+This is a .NET Standard 2.0 library that provides access to arena allocators along with the ability to use unmanaged references with natural C# syntax and safe-guards, as well as the ability for arena-allocated items to reference managed C# objects.
+
+Use by creating a `new Arena()` and calling `Allocate` with blittable structs that implement `IArenaContents` or `AllocValue(s)` with unmanaged types that do not implement `IArenaContents`, and `Free` or `FreeValues` with instances of `UnmanagedRef<T>`. Also supports `Clear` and `Dispose`.
 
 ## Features
 
@@ -23,4 +25,4 @@ Proof of concept for arena allocator inside C#. Use by creating a `new Arena()` 
 
 ## Should I use this in production?
 
-Absolutely not. Unless you really want to, I'm not your dad. I'd probably use it myself, but I'm a game developer, what do I know?
+Probably not. Unless you really want to, I'm not your dad. I'd probably use it myself, but I'm a game developer, what do I know?

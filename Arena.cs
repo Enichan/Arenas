@@ -200,7 +200,7 @@ namespace Arenas {
             }
         }
 
-        internal void Free<T>(UnmanagedRef<T> uref) where T : unmanaged, IArenaContents {
+        public void Free<T>(UnmanagedRef<T> uref) where T : unmanaged, IArenaContents {
             if (!uref.HasValue) {
                 // can't free that ya silly bugger
                 return;

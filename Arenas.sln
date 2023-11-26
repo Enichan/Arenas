@@ -3,7 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.34301.259
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Arenas", "Arenas.csproj", "{8EA08137-807C-45F2-A5D6-E427E4E3EC39}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Arenas", "Arenas.csproj", "{FC0F371D-10A4-4A3D-B3F8-A3710921F7A2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ArenasTest", "ArenasTest\ArenasTest.csproj", "{C3BA8364-E22D-428E-8D7F-558403371451}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -11,10 +13,14 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{8EA08137-807C-45F2-A5D6-E427E4E3EC39}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{8EA08137-807C-45F2-A5D6-E427E4E3EC39}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{8EA08137-807C-45F2-A5D6-E427E4E3EC39}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{8EA08137-807C-45F2-A5D6-E427E4E3EC39}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FC0F371D-10A4-4A3D-B3F8-A3710921F7A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FC0F371D-10A4-4A3D-B3F8-A3710921F7A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FC0F371D-10A4-4A3D-B3F8-A3710921F7A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FC0F371D-10A4-4A3D-B3F8-A3710921F7A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C3BA8364-E22D-428E-8D7F-558403371451}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C3BA8364-E22D-428E-8D7F-558403371451}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C3BA8364-E22D-428E-8D7F-558403371451}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C3BA8364-E22D-428E-8D7F-558403371451}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

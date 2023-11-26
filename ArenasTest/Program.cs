@@ -1,8 +1,13 @@
-﻿using System;
+﻿using Arenas;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
-namespace Arenas {
+namespace ArenasTest {
     class Program {
-        unsafe static void Main(string[] args) {
+        static unsafe void Main(string[] args) {
             UnmanagedRef<Entity> entity;
 
             using (var arena = new Arena()) {
