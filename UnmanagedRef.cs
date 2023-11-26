@@ -33,6 +33,9 @@ namespace Arenas {
             if (dest is null) {
                 throw new ArgumentNullException(nameof(dest));
             }
+            if (!HasValue) {
+                throw new NullReferenceException($"Error in UnmanagedRef<{GetType().GenericTypeArguments[0].Name}>.CopyTo: HasValue was false");
+            }
             if (destIndex < 0 || destIndex + count > dest.Length) {
                 throw new ArgumentOutOfRangeException(nameof(destIndex));
             }
@@ -45,6 +48,10 @@ namespace Arenas {
         }
 
         public T[] ToArray() {
+            if (!HasValue) {
+                throw new NullReferenceException($"Error in UnmanagedRef<{GetType().GenericTypeArguments[0].Name}>.ToArray: HasValue was false");
+            }
+
             var items = new T[elementCount];
             CopyTo(items, 0, 0, elementCount);
             return items;
