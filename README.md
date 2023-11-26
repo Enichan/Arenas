@@ -14,6 +14,7 @@ Proof of concept for arena allocator inside C#. Use by creating a `new Arena()` 
 - Can enumerate over all entries in the arena
 - Allocate any count of items
 - Allocate generic buffers of any size by allocating using `AllocValues<byte>(sizeInBytes)`
+- Debug view will show list of items for `UnmanagedRef<T>` (handy when inspecting multiple elements)
 
 ## Potential future work
 
