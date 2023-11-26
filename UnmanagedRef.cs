@@ -1,10 +1,13 @@
-﻿using System;
+﻿using Arenas.Dbg;
+using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace Arenas {
+    [DebuggerTypeProxy(typeof(UnmanagedRefDebugView<>))]
     unsafe readonly public struct UnmanagedRef<T> where T : unmanaged {
         private readonly T* pointer;
         private readonly RefVersion version;
@@ -18,7 +21,39 @@ namespace Arenas {
             this.elementCount = elementCount;
         }
 
+        public void CopyTo(T[] dest) {
+            CopyTo(dest, 0, 0, elementCount);
+        }
+
+        public void CopyTo(T[] dest, int destIndex) {
+            CopyTo(dest, destIndex, 0, elementCount);
+        }
+
+        public void CopyTo(T[] dest, int destIndex, int sourceIndex, int count) {
+            if (dest is null) {
+                throw new ArgumentNullException(nameof(dest));
+            }
+            if (destIndex < 0 || destIndex + count > dest.Length) {
+                throw new ArgumentOutOfRangeException(nameof(destIndex));
+            }
+            if (sourceIndex < 0 || sourceIndex + count > elementCount) {
+                throw new ArgumentOutOfRangeException(nameof(sourceIndex));
+            }
+            for (int i = 0; i < count; i++) {
+                dest[destIndex + i] = pointer[sourceIndex + i];
+            }
+        }
+
+        public T[] ToArray() {
+            var items = new T[elementCount];
+            CopyTo(items, 0, 0, elementCount);
+            return items;
+        }
+
         public override string ToString() {
+            if (elementCount > 1) {
+                return $"UnmanagedRef<{GetType().GenericTypeArguments[0].Name}>(ElementCount={elementCount})";
+            }
             var ptr = Value;
             return ptr == null ? string.Empty : (*ptr).ToString();
         }

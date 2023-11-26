@@ -13,7 +13,7 @@ namespace Arenas {
 
                 var bytes = arena.AllocValues<byte>(129);
                 for (int i = 0; i < bytes.ElementCount; i++) {
-                    *(bytes.Value + i) = (byte)i;
+                    bytes.Value[i] = (byte)(bytes.ElementCount - 1 - i);
                 }
 
                 arena.Allocate(new Entity(13, 12, 69));
