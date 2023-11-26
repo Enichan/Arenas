@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Arenas.Dbg {
+namespace Arenas {
     internal readonly struct UnmanagedRefDebugView<T> where T : unmanaged {
         private readonly UnmanagedRef<T> uref;
 

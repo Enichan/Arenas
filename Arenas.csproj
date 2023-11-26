@@ -48,7 +48,7 @@
     <Compile Include="Arena.cs" />
     <Compile Include="ArenaEntry.cs" />
     <Compile Include="CollectionExtensions.cs" />
-    <Compile Include="Dbg\UnmanagedRefDebugView.cs" />
+    <Compile Include="UnmanagedRefDebugView.cs" />
     <Compile Include="IArenaContents.cs" />
     <Compile Include="ManagedRef.cs" />
     <Compile Include="RefVersion.cs" />
