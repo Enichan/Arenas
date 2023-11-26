@@ -26,7 +26,7 @@ namespace Arenas {
         }
 
         public override string ToString() {
-            return $"ManagedRef({handle:x})";
+            return $"ManagedRef(0x{handle:x})";
         }
 
         public static explicit operator IntPtr(ManagedRef ptr) {
