@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 
 namespace Arenas {
     [DebuggerTypeProxy(typeof(UnmanagedRefDebugView<>))]
+    [DebuggerDisplay("{HasValue ? ToString() : null}")]
     unsafe readonly public struct UnmanagedRef<T> where T : unmanaged {
         private readonly T* pointer;
         private readonly RefVersion version;
