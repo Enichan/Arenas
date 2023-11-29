@@ -31,8 +31,11 @@ using (var arena = new Arena()) {
     john.Value->LastName = "Doe";
 
     var jack = arena.Allocate(new Person());
-    john.Value->FirstName = "Jack";
-    john.Value->LastName = "Black";
+    jack.Value->FirstName = "Jack";
+    jack.Value->LastName = "Black";
+
+    Console.WriteLine(john);
+    Console.WriteLine(jack);
 
     // make a list of integers in the arena
     var list = new ArenaList<int>(arena);
@@ -58,8 +61,9 @@ using (var arena = new Arena()) {
         Console.WriteLine(item);
     }
 
-    // free the rest
+    // free the rest and show that it's true
     arena.Clear();
+    Console.WriteLine($"Does stale reference have a value? {jack.HasValue}");
 
     // make some random bytes using a Guid
     var guid = Guid.NewGuid();
