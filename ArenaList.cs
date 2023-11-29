@@ -28,6 +28,9 @@ namespace Arenas {
         }
 
         public void Free() {
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot Free UnmanagedList<T>: list has not been properly initialized with arena reference");
+            }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot Free UnmanagedList<T>: list memory has previously been freed");
             }
@@ -38,6 +41,9 @@ namespace Arenas {
         }
 
         public void Clear() {
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot Clear UnmanagedList<T>: list has not been properly initialized with arena reference");
+            }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot Clear UnmanagedList<T>: list memory has previously been freed");
             }
@@ -73,6 +79,9 @@ namespace Arenas {
         }
 
         public void Add(T item) {
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot Add item to UnmanagedList<T>: list has not been properly initialized with arena reference");
+            }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot Add item to UnmanagedList<T>: list memory has previously been freed");
             }
@@ -83,6 +92,9 @@ namespace Arenas {
         }
 
         public void Insert(int index, T item) {
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot Insert item into UnmanagedList<T>: list has not been properly initialized with arena reference");
+            }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot Insert item into UnmanagedList<T>: list memory has previously been freed");
             }
@@ -107,6 +119,9 @@ namespace Arenas {
         }
 
         public void RemoveAt(int index) {
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot RemoveAt in UnmanagedList<T>: list has not been properly initialized with arena reference");
+            }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot RemoveAt in UnmanagedList<T>: list memory has previously been freed");
             }
@@ -126,6 +141,9 @@ namespace Arenas {
         }
 
         public bool Remove(T item) {
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot Remove item from UnmanagedList<T>: list has not been properly initialized with arena reference");
+            }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot Remove item from UnmanagedList<T>: list memory has previously been freed");
             }
@@ -138,6 +156,9 @@ namespace Arenas {
         }
 
         public int IndexOf(T item) {
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot get IndexOf item in UnmanagedList<T>: list has not been properly initialized with arena reference");
+            }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot get IndexOf item in UnmanagedList<T>: list memory has previously been freed");
             }
@@ -154,6 +175,9 @@ namespace Arenas {
         }
 
         public bool Contains(T item) {
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot check if UnmanagedList<T>: list has not been properly initialized with arena reference");
+            }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot check if UnmanagedList<T> Contains item: list memory has previously been freed");
             }
@@ -161,6 +185,9 @@ namespace Arenas {
         }
 
         public void CopyTo(T[] array, int destIndex) {
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot CopyTo array from UnmanagedList<T>: list has not been properly initialized with arena reference");
+            }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot CopyTo array from UnmanagedList<T>: list memory has previously been freed");
             }
@@ -169,6 +196,9 @@ namespace Arenas {
         }
 
         public Enumerator GetEnumerator() {
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedList<T>: list has not been properly initialized with arena reference");
+            }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedList<T>: list memory has previously been freed");
             }
@@ -187,6 +217,9 @@ namespace Arenas {
 
         public T this[int index] {
             get {
+                if (arena is null) {
+                    throw new InvalidOperationException("Cannot get item at index in UnmanagedList<T>: list has not been properly initialized with arena reference");
+                }
                 if (!info.HasValue) {
                     throw new InvalidOperationException("Cannot get item at index in UnmanagedList<T>: list memory has previously been freed");
                 }
@@ -196,6 +229,9 @@ namespace Arenas {
                 return ((T*)info.Value->Items)[index];
             }
             set {
+                if (arena is null) {
+                    throw new InvalidOperationException("Cannot set item at index in UnmanagedList<T>: list has not been properly initialized with arena reference");
+                }
                 if (!info.HasValue) {
                     throw new InvalidOperationException("Cannot set item at index in UnmanagedList<T>: list memory has previously been freed");
                 }

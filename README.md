@@ -21,6 +21,96 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 - Generic `ArenaList<T>` type for storing lists inside an arena instance
 - Ability to free items via IntPtr.
 
+## Sample
+
+```csharp
+using (var arena = new Arena()) {
+    // allocate some people in the arena
+    var john = arena.Allocate(new Person());
+    john.Value->FirstName = "John";
+    john.Value->LastName = "Doe";
+
+    var jack = arena.Allocate(new Person());
+    john.Value->FirstName = "Jack";
+    john.Value->LastName = "Black";
+
+    // make a list of integers in the arena
+    var list = new ArenaList<int>(arena);
+    for (int i = 10; i < 22; i++) {
+        list.Add(i);
+    }
+
+    Console.WriteLine("Items in arena:");
+    foreach (var item in arena) {
+        Console.WriteLine(item);
+    }
+
+    Console.WriteLine("Values in list:");
+    foreach (var i in list) {
+        Console.WriteLine(i);
+    }
+
+    // free an item
+    arena.Free(jack);
+
+    Console.WriteLine("Items in arena after freeing:");
+    foreach (var item in arena) {
+        Console.WriteLine(item);
+    }
+
+    // free the rest
+    arena.Clear();
+
+    // make some random bytes using a Guid
+    var guid = Guid.NewGuid();
+    var guidBytes = guid.ToByteArray();
+
+    // allocate a buffer for the bytes in the arena and copy them
+    var unmanagedBytes = arena.AllocCount<byte>(guidBytes.Length);
+    Marshal.Copy(guidBytes, 0, (IntPtr)unmanagedBytes.Value, guidBytes.Length);
+
+    // check if the bytes are the same
+    var isSame = true;
+    for (int i = 0; i < guidBytes.Length; i++) {
+        if (guidBytes[i] != *unmanagedBytes[i]) {
+            isSame = false;
+            break;
+        }
+    }
+    Console.WriteLine(isSame ? "Guid bytes match" : "Guid bytes don't match");
+}
+```
+
+```csharp
+[StructLayout(LayoutKind.Sequential)]
+unsafe public struct Person : IArenaContents {
+    private Guid arenaID;
+    private ManagedRef firstName;
+    private ManagedRef lastName;
+
+    void IArenaContents.Free() {
+        // free managed references by setting to null
+        FirstName = null; 
+        LastName = null;
+    }
+
+    public override string ToString() {
+        return $"{FirstName} {LastName}";
+    }
+
+    public string FirstName {
+        get { return firstName.Get<string>(); }
+        set { firstName = firstName.Set(Arena.Get(arenaID), value); }
+    }
+    public string LastName {
+        get { return lastName.Get<string>(); }
+        set { lastName = lastName.Set(Arena.Get(arenaID), value); }
+    }
+
+    void IArenaContents.SetArenaID(Guid value) { arenaID = value; }
+}
+```
+
 ## Potential future work
 
 - Custom per-arena tracing GC?

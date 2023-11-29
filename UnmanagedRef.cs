@@ -78,6 +78,15 @@ namespace Arenas {
             return new UnmanagedRef<T>((T*)(IntPtr)uref, uref.Arena, uref.Version, uref.ElementCount);
         }
 
+        public T* this[int index] {
+            get {
+                if (index < 0 || index >= ElementCount) {
+                    throw new IndexOutOfRangeException();
+                }
+                return Value + index;
+            }
+        }
+
         public Arena Arena { get { return arena; } }
         public T* Value { get { return !arena.VersionsMatch(version, (IntPtr)pointer) ? null : pointer; } }
         public bool HasValue { get { return arena.VersionsMatch(version, (IntPtr)pointer) && pointer != null; } }
@@ -160,6 +169,15 @@ namespace Arenas {
 
         public static explicit operator IntPtr(UnmanagedRef uref) {
             return uref.pointer;
+        }
+
+        public IntPtr this[int index] {
+            get {
+                if (index < 0 || index >= ElementCount) {
+                    throw new IndexOutOfRangeException();
+                }
+                return Value + index;
+            }
         }
 
         public Type Type { get { return type; } }

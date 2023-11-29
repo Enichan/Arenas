@@ -9,71 +9,61 @@ using System.Threading.Tasks;
 namespace ArenasTest {
     class Program {
         static unsafe void Main(string[] args) {
-            UnmanagedRef<Entity> entity;
-
             using (var arena = new Arena()) {
-                entity = arena.Allocate(new Entity(1, 2, 3));
-                entity.Value->Name = "John Doe";
-                entity.Value->Y = 8;
-                Console.WriteLine(entity);
+                // allocate some people in the arena
+                var john = arena.Allocate(new Person());
+                john.Value->FirstName = "John";
+                john.Value->LastName = "Doe";
 
-                var typelessRef = (UnmanagedRef)entity;
-                var typelessArr = typelessRef.ToArray<object>();
-                arena.Free(typelessRef.Value);
-                Console.WriteLine(typelessRef);
-                Console.WriteLine(Marshal.SizeOf(typelessRef));
+                var jack = arena.Allocate(new Person());
+                john.Value->FirstName = "Jack";
+                john.Value->LastName = "Black";
 
-                var bytes = arena.AllocCount<byte>(129);
-                for (int i = 0; i < bytes.ElementCount; i++) {
-                    bytes.Value[i] = (byte)(bytes.ElementCount - 1 - i);
+                // make a list of integers in the arena
+                var list = new ArenaList<int>(arena);
+                for (int i = 10; i < 22; i++) {
+                    list.Add(i);
                 }
 
-                arena.Allocate(new Entity(13, 12, 69));
-
-                arena.Free(bytes);
-                arena.AllocCount<Entity>(3);
-
-                arena.Allocate(new Entity(8, 8, 8));
-
+                Console.WriteLine("Items in arena:");
                 foreach (var item in arena) {
                     Console.WriteLine(item);
                 }
 
-                arena.Free(entity);
-                Console.WriteLine(entity);
-
-                var list = new ArenaList<int>(arena, 6);
-                list.Add(5);
-                list.Add(8);
-                list.Add(1);
-
-                for (int i = 0; i < 8; i++) {
-                    list.Add(i + 10);
+                Console.WriteLine("Values in list:");
+                foreach (var i in list) {
+                    Console.WriteLine(i);
                 }
 
-                Console.WriteLine(list.IndexOf(10));
-                Console.WriteLine(list.IndexOf(666));
-                Console.WriteLine(list.Contains(10));
-                Console.WriteLine(list.Contains(666));
+                // free an item
+                arena.Free(jack);
 
-                foreach (var val in list) {
-                    Console.WriteLine(val);
-                }
-
+                Console.WriteLine("Items in arena after freeing:");
                 foreach (var item in arena) {
                     Console.WriteLine(item);
                 }
 
-                Console.WriteLine("Freeing list");
-                list.Free();
-                Console.WriteLine($"List is allocated: {list.IsAllocated}");
+                // free the rest
+                arena.Clear();
 
-                foreach (var item in arena) {
-                    Console.WriteLine(item);
+                // make some random bytes using a Guid
+                var guid = Guid.NewGuid();
+                var guidBytes = guid.ToByteArray();
+
+                // allocate a buffer for the bytes in the arena and copy them
+                var unmanagedBytes = arena.AllocCount<byte>(guidBytes.Length);
+                Marshal.Copy(guidBytes, 0, (IntPtr)unmanagedBytes.Value, guidBytes.Length);
+
+                // check if the bytes are the same
+                var isSame = true;
+                for (int i = 0; i < guidBytes.Length; i++) {
+                    if (guidBytes[i] != *unmanagedBytes[i]) {
+                        isSame = false;
+                        break;
+                    }
                 }
+                Console.WriteLine(isSame ? "Guid bytes match" : "Guid bytes don't match");
             }
-
-            Console.WriteLine($"Is entity.Value null? {entity.Value == null}");
         }
     }
 }
