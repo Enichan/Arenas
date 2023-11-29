@@ -5,7 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Arenas {
-    public static class CollectionExtensions {
+    internal static class CollectionExtensions {
         public static void SetLast<T>(this IList<T> list, T item) {
             if (list is null) {
                 throw new ArgumentNullException(nameof(list));

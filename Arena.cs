@@ -14,7 +14,7 @@ namespace Arenas {
         private bool disposedValue;
         private List<Page> pages;
         private Dictionary<int, Freelist> freelists;
-        private Guid ID;
+        private Guid id;
         private int enumVersion;
 
         public Arena() {
@@ -26,18 +26,40 @@ namespace Arenas {
             Clear(false);
         }
 
+        public UnmanagedRef<T> UnmanagedRefFromPtr<T>(IntPtr ptr) where T : unmanaged {
+            if (ptr == IntPtr.Zero) {
+                throw new ArgumentNullException(nameof(ptr));
+            }
+            var header = ItemHeader.GetHeader(ptr);
+            if (header.Type != typeof(T)) {
+                throw new InvalidOperationException("Type mismatch in header for pointer in UnmanagedRefFromPtr<T>(IntPtr), types do not match or address may be invalid.");
+            }
+            return new UnmanagedRef<T>((T*)ptr, this, header.Version, header.Size / sizeof(T));
+        }
+
+        public UnmanagedRef UnmanagedRefFromPtr(IntPtr ptr) {
+            if (ptr == IntPtr.Zero) {
+                throw new ArgumentNullException(nameof(ptr));
+            }
+            var header = ItemHeader.GetHeader(ptr);
+            if (header.Type == typeof(Exception)) {
+                throw new InvalidOperationException("Invalid type in header for pointer in UnmanagedRefFromPtr(IntPtr), address may be invalid.");
+            }
+            return new UnmanagedRef(header.Type, ptr, this, header.Version, header.Size / Marshal.SizeOf(header.Type));
+        }
+
         private Page AllocPage(int size) {
             Debug.Assert(size == Page.AlignCeil(size, PageSize), "Non page-aligned size in AllocPage");
             
             var mem = Marshal.AllocHGlobal(size);
-            ZeroMem(mem, size);
+            ZeroMemory(mem, (UIntPtr)size);
 
             var page = new Page(mem, size);
             pages.Add(new Page(mem, size));
             return page;
         }
 
-        private IntPtr Allocate(Type type, long sizeBytes, out RefVersion version) {
+        private IntPtr Allocate(Type type, ulong sizeBytes, out RefVersion version) {
             IntPtr ptr;
 
             // make sure size in bytes is at least one word and doesn't overflow
@@ -74,11 +96,36 @@ namespace Arenas {
             return ptr;
         }
 
-        public UnmanagedRef<T> AllocValues<T>(int count) where T : unmanaged {
-            if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
-                throw new InvalidOperationException("Can't allocate arena items which implement IArenaContents via AllocValues, use Allocate instead");
+        public UnmanagedRef<T> Allocate<T>(T item) where T : unmanaged {
+            var items = AllocCount<T>(1);
+            items.Value[0] = item;
+            ArenaContentsHelper.SetArenaID(items.Value, id);
+            return items;
+        }
+
+        public UnmanagedRef<T> Allocate<T>(ref T item) where T : unmanaged {
+            var items = AllocCount<T>(1);
+            items.Value[0] = item;
+            ArenaContentsHelper.SetArenaID(items.Value, id);
+            return items;
+        }
+
+        public UnmanagedRef<T> AllocCount<T>(int count) where T : unmanaged {
+            if (count <= 0) {
+                throw new ArgumentOutOfRangeException(nameof(count));
             }
-            return _AllocValues<T>(count);
+
+            var items = _AllocValues<T>(count);
+
+            if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
+                var cur = items.Value;
+                for (int i = 0; i < items.ElementCount; i++, cur++) {
+                    // set arena ID
+                    ArenaContentsHelper.SetArenaID(cur, id);
+                }
+            }
+
+            return items;
         }
 
         public UnmanagedRef<T> _AllocValues<T>(int count) where T : unmanaged {
@@ -87,60 +134,21 @@ namespace Arenas {
             Type type = typeof(T);
             int elementSize = sizeof(T);
 
-            long sizeBytes = elementSize * count;
-            sizeBytes = NextPowerOfTwo(sizeBytes);
+            ulong sizeBytes = (uint)elementSize * (uint)count;
+            if (count > 1) {
+                sizeBytes = NextPowerOfTwo(sizeBytes);
+            }
 
             // allocate items and zero memory
             RefVersion version;
             var ptr = Allocate(type, sizeBytes, out version);
-            ZeroMem(ptr, (int)sizeBytes);
+            ZeroMemory(ptr, (UIntPtr)sizeBytes);
 
             // get actual allocated item count (can be bigger than requested)
             count = (int)sizeBytes / sizeof(T);
 
             // return pointer as an UnmanagedRef
             return new UnmanagedRef<T>((T*)ptr, this, version, count);
-        }
-
-        public UnmanagedRef<T> AllocValue<T>(T item) where T : unmanaged {
-            if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
-                throw new InvalidOperationException("Can't allocate arena item which implements IArenaContents via AllocValue, use Allocate instead");
-            }
-            return _AllocValue(item);
-        }
-
-        private UnmanagedRef<T> _AllocValue<T>(T item) where T : unmanaged {
-            enumVersion++;
-
-            Type type = typeof(T);
-            long sizeBytes = sizeof(T);
-
-            // allocate item
-            RefVersion version;
-            var ptr = Allocate(type, sizeBytes, out version);
-
-            // initialize item value
-            *(T*)ptr = item;
-
-            // return pointer as an UnmanagedRef
-            return new UnmanagedRef<T>((T*)ptr, this, version, 1);
-        }
-
-        public UnmanagedRef<T> Allocate<T>(int count) where T : unmanaged, IArenaContents {
-            return _Allocate(_AllocValues<T>(count));
-        }
-
-        public UnmanagedRef<T> Allocate<T>(T item) where T : unmanaged, IArenaContents {
-            return _Allocate(_AllocValue(item));
-        }
-
-        private UnmanagedRef<T> _Allocate<T>(UnmanagedRef<T> items) where T : unmanaged, IArenaContents {
-            var cur = items.Value;
-            for (int i = 0; i < items.ElementCount; i++, cur++) {
-                // set arena ID
-                cur->ArenaID = ID;
-            }
-            return items;
         }
 
         private IntPtr Push(int size) {
@@ -161,21 +169,54 @@ namespace Arenas {
             return ptr;
         }
 
-        public void FreeValues<T>(UnmanagedRef<T> uref) where T : unmanaged {
-            if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
-                throw new InvalidOperationException("Can't free arena items which implement IArenaContents via FreeValues, use Free instead");
-            }
-            if (!uref.HasValue) {
+        public void Free<T>(in UnmanagedRef<T> items) where T : unmanaged {
+            if (!items.HasValue) {
                 // can't free that ya silly bugger
                 return;
             }
 
             enumVersion++;
-            _FreeValues(uref);
+
+            if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
+                var cur = items.Value;
+                for (int i = 0; i < items.ElementCount; i++, cur++) {
+                    // free contents
+                    ArenaContentsHelper.Free(cur);
+                }
+            }
+
+            _FreeValues((IntPtr)items.Value);
         }
 
-        private void _FreeValues<T>(UnmanagedRef<T> uref) where T : unmanaged {
-            var itemPtr = (IntPtr)uref.Value;
+        public void Free(in UnmanagedRef items) {
+            if (!items.HasValue) {
+                // can't free that ya silly bugger
+                return;
+            }
+
+            enumVersion++;
+
+            var free = ArenaContentsHelper.GetFreeDelegate(items.Type);
+            var elementSize = Marshal.SizeOf(items.Type);
+
+            if (typeof(IArenaContents).IsAssignableFrom(items.Type)) {
+                var cur = items.Value;
+                for (int i = 0; i < items.ElementCount; i++) {
+                    // free contents
+                    free(cur);
+                    cur += elementSize;
+                }
+            }
+
+            _FreeValues(items.Value);
+        }
+
+        public void Free(IntPtr ptr) {
+            var uref = UnmanagedRefFromPtr(ptr);
+            Free(in uref);
+        }
+
+        private void _FreeValues(IntPtr itemPtr) {
             var sizeBytes = ItemHeader.GetSize(itemPtr);
 
             // set version to indicate item is not valid
@@ -198,25 +239,6 @@ namespace Arenas {
                 freelist.Push(itemPtr);
                 freelists[sizeBytes] = freelist;
             }
-        }
-
-        public void Free<T>(UnmanagedRef<T> uref) where T : unmanaged, IArenaContents {
-            if (!uref.HasValue) {
-                // can't free that ya silly bugger
-                return;
-            }
-
-            enumVersion++;
-
-            // tell the items to free anything they need to
-            // usually this means setting ManagedRefs to null but it could also
-            // have to free other unmanaged allocations
-            var item = uref.Value;
-            for (int i = 0; i < uref.ElementCount; i++, item++) {
-                item->Free();
-            }
-
-            _FreeValues(uref);
         }
 
         internal IntPtr SetOutsidePtr<T>(T value, IntPtr currentHandlePtr) where T : class {
@@ -318,19 +340,19 @@ namespace Arenas {
             freelists.Clear();
             objToPtr.Clear();
 
-            if (ID != Guid.Empty) {
-                arenas.Remove(ID);
+            if (id != Guid.Empty) {
+                arenas.Remove(id);
             }
 
             if (!disposing) {
                 // allocate one page to start and then try and register a unique ID
                 AllocPage(PageSize);
 
-                ID = Guid.NewGuid();
-                while (arenas.ContainsKey(ID)) {
-                    ID = Guid.NewGuid();
+                id = Guid.NewGuid();
+                while (arenas.ContainsKey(id)) {
+                    id = Guid.NewGuid();
                 }
-                arenas[ID] = this;
+                arenas[id] = this;
             }
         }
 
@@ -383,11 +405,23 @@ namespace Arenas {
         public int Version { get; private set; }
 
         #region Static
+        [DllImport("kernel32.dll")]
+        private static extern void RtlZeroMemory(IntPtr dst, UIntPtr length);
+        private delegate void ZeroMemoryDelegate(IntPtr dst, UIntPtr length);
+
         private static Dictionary<Guid, Arena> arenas;
         private static Dictionary<Type, TypeHandle> typeToHandle;
         private static Dictionary<TypeHandle, Type> handleToType;
+        private static ZeroMemoryDelegate ZeroMemory;
 
         static Arena() {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
+                ZeroMemory = RtlZeroMemory;
+            }
+            else {
+                ZeroMemory = ZeroMemPlatformIndependent;
+            }
+
             arenas = new Dictionary<Guid, Arena>();
             typeToHandle = new Dictionary<Type, TypeHandle>();
             handleToType = new Dictionary<TypeHandle, Type>();
@@ -426,7 +460,7 @@ namespace Arenas {
         }
 
         // http://graphics.stanford.edu/%7Eseander/bithacks.html#RoundUpPowerOf2
-        private static long NextPowerOfTwo(long v) {
+        private static ulong NextPowerOfTwo(ulong v) {
             v--;
             v |= v >> 1;
             v |= v >> 2;
@@ -438,15 +472,16 @@ namespace Arenas {
             return v;
         }
 
-        private static void ZeroMem(IntPtr ptr, int size) {
+        private static void ZeroMemPlatformIndependent(IntPtr ptr, UIntPtr length) {
+            ulong size = (ulong)length;
             if (size % sizeof(ulong) != 0) {
-                throw new ArgumentException("Size must be divisible by sizeof(ulong)", nameof(size));
+                throw new ArgumentException("Size must be divisible by sizeof(ulong)", nameof(length));
             }
-
+            
             var cur = (ulong*)ptr;
             var count = size / sizeof(ulong);
 
-            for (int i = 0; i < count; i++, cur++) {
+            for (ulong i = 0; i < count; i++, cur++) {
                 *cur = 0;
             }
         }

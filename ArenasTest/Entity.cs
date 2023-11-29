@@ -33,6 +33,6 @@ namespace Arenas {
 
         // yucky boilerplate :(
         public Guid ArenaID { get; private set; }
-        Guid IArenaContents.ArenaID { get { return ArenaID; } set { ArenaID = value; } }
+        void IArenaContents.SetArenaID(Guid value) { ArenaID = value; }
     }
 }
