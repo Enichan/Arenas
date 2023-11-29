@@ -61,9 +61,9 @@ using (var arena = new Arena()) {
         Console.WriteLine(item);
     }
 
-    // free the rest and show that it's true
+    // free the rest and show that our references are stale
     arena.Clear();
-    Console.WriteLine($"Does stale reference have a value? {jack.HasValue}");
+    Console.WriteLine($"Does stale reference have a value? {john.HasValue}");
 
     // make some random bytes using a Guid
     var guid = Guid.NewGuid();

@@ -306,7 +306,7 @@ namespace Arenas {
         }
 
         public bool VersionsMatch(RefVersion version, IntPtr item) {
-            return version == ItemHeader.GetVersion(item);
+            return version.Arena == Version && version == ItemHeader.GetVersion(item);
         }
 
         public void Clear() {
