@@ -7,7 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Arenas {
-    unsafe public class Arena : IDisposable, IEnumerable<ArenaEntry> {
+    unsafe public class Arena : IDisposable, IEnumerable<UnmanagedRef> {
         public const int PageSize = 4096;
 
         private Dictionary<object, ObjectEntry> objToPtr;
@@ -392,7 +392,7 @@ namespace Arenas {
             return new Enumerator(this);
         }
 
-        IEnumerator<ArenaEntry> IEnumerable<ArenaEntry>.GetEnumerator() {
+        IEnumerator<UnmanagedRef> IEnumerable<UnmanagedRef>.GetEnumerator() {
             return GetEnumerator();
         }
 
@@ -690,19 +690,19 @@ namespace Arenas {
         }
 
         [Serializable]
-        public struct Enumerator : IEnumerator<ArenaEntry>, IEnumerator {
+        public struct Enumerator : IEnumerator<UnmanagedRef>, IEnumerator {
             private Arena arena;
             private int pageIndex;
             private int offset;
             private int version;
-            private ArenaEntry current;
+            private UnmanagedRef current;
 
             internal Enumerator(Arena arena) {
                 this.arena = arena;
                 pageIndex = 0;
                 offset = 0;
                 version = arena.enumVersion;
-                current = default(ArenaEntry);
+                current = default(UnmanagedRef);
             }
 
             public void Dispose() {
@@ -730,7 +730,7 @@ namespace Arenas {
                         }
 
                         if (header.Version.IsValid) {
-                            current = new ArenaEntry(header.Type, ptr, header.Size);
+                            current = localArena.UnmanagedRefFromPtr(ptr);
                             return true;
                         }
                     }
@@ -746,11 +746,11 @@ namespace Arenas {
 
                 pageIndex = arena.pages.Count + 1;
                 offset = 0;
-                current = default(ArenaEntry);
+                current = default(UnmanagedRef);
                 return false;
             }
 
-            public ArenaEntry Current {
+            public UnmanagedRef Current {
                 get {
                     return current;
                 }
@@ -772,7 +772,7 @@ namespace Arenas {
 
                 pageIndex = 0;
                 offset = 0;
-                current = default(ArenaEntry);
+                current = default(UnmanagedRef);
             }
         }
 

@@ -36,7 +36,7 @@ namespace ArenasTest {
                 arena.Allocate(new Entity(8, 8, 8));
 
                 foreach (var item in arena) {
-                    Console.WriteLine($"{item}, {item.ElementCount} elements");
+                    Console.WriteLine(item);
                 }
 
                 arena.Free(entity);
@@ -61,7 +61,7 @@ namespace ArenasTest {
                 }
 
                 foreach (var item in arena) {
-                    Console.WriteLine($"{item}, {item.ElementCount} elements");
+                    Console.WriteLine(item);
                 }
 
                 Console.WriteLine("Freeing list");
@@ -69,7 +69,7 @@ namespace ArenasTest {
                 Console.WriteLine($"List is allocated: {list.IsAllocated}");
 
                 foreach (var item in arena) {
-                    Console.WriteLine($"{item}, {item.ElementCount} elements");
+                    Console.WriteLine(item);
                 }
             }
 

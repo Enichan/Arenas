@@ -86,6 +86,7 @@ namespace Arenas {
     }
 
     [DebuggerTypeProxy(typeof(UnmanagedRefDebugView))]
+    [DebuggerDisplay("{HasValue ? ToString() : null}")]
     unsafe readonly public struct UnmanagedRef {
         private readonly Type type;
         private readonly IntPtr pointer;
@@ -146,8 +147,14 @@ namespace Arenas {
             if (elementCount > 1) {
                 return $"UnmanagedRef(Type={Type}, ElementCount={elementCount})";
             }
+
             var ptr = Value;
-            return ptr == null ? string.Empty : $"({Type}*)0x{ptr:x}";
+            if (ptr == IntPtr.Zero) {
+                return string.Empty;
+            }
+
+            var inst = Marshal.PtrToStructure(Value, Type);
+            return inst.ToString();
         }
 
         public static explicit operator IntPtr(UnmanagedRef uref) {

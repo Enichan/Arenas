@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace ArenasTest {
+namespace Arenas {
     [DebuggerTypeProxy(typeof(UnmanagedListDebugView<>))]
     public unsafe struct ArenaList<T> : IList<T> where T : unmanaged {
         private const int defaultCapacity = 4;
@@ -309,5 +309,6 @@ namespace ArenasTest {
 
         public int Count { get { return list.Count; } }
         public Arena Arena { get { return list.Arena; } }
+        public bool IsAllocated { get { return list.IsAllocated; } }
     }
 }
