@@ -117,6 +117,7 @@ unsafe public struct Person : IArenaContents {
 
 ## Potential future work
 
+- More arena-specific generic collections like Dictionary/HashSet
 - Custom per-arena tracing GC?
 
 ## Should I use this in production?
