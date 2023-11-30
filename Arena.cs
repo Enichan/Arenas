@@ -346,17 +346,6 @@ namespace Arenas {
         private void Clear(bool disposing) {
             enumVersion++;
 
-            if (disposing) {
-                id = ArenaID.Empty;
-            }
-            else {
-                var oldID = id;
-                id = ArenaID.Empty;
-
-                Remove(oldID);
-                id = Add(this);
-            }
-
             // free GCHandles
             foreach (var entry in objToPtr.Values) {
                 var gcHandle = entry.Handle;
@@ -369,14 +358,19 @@ namespace Arenas {
             freelists.Clear();
             objToPtr.Clear();
 
-            if (id != ArenaID.Empty) {
+            if (disposing) {
                 Remove(id);
+                id = ArenaID.Empty;
             }
+            else {
+                var oldID = id;
 
-            if (!disposing) {
-                // allocate one page to start and then try and register a unique ID
-                AllocPage(PageSize);
+                // removing and re-adding with a new ID will invalidate any stale references
+                Remove(oldID);
                 id = Add(this);
+
+                // allocate one page to start
+                AllocPage(PageSize);
             }
         }
 
