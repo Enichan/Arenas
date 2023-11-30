@@ -143,6 +143,29 @@ namespace Arenas {
             }
         }
 
+        // doable in place
+        // Contains
+        // CopyTo
+        // EndsWith
+        // Trim / TrimEnd / TrimStart
+        // enumerator
+        // hashcode and equality
+        // IndexOf / IndexOfAny
+        // LastIndexOf / LastIndexOfAny
+        // StartsWith
+        // ToLower(Invariant)
+        // ToUpper(Invariant)
+        // Remove
+        // Replace (char)
+        // Substring
+
+        // doable with reallocations
+        // Insert
+        // PadLeft / PadRight
+        // Replace (string)
+        // Split
+        // Substring
+
         public void Free() {
             var arena = contents.Arena;
             if (!(arena is null)) {
