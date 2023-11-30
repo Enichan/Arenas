@@ -25,7 +25,7 @@ namespace ArenasTest {
                 Console.WriteLine(jack);
 
                 // make a list of integers in the arena
-                var list = new ArenaList<int>(arena);
+                var list = new ArenaList<int>(arena) { 1, 2, 3 };
                 for (int i = 10; i < 22; i++) {
                     list.Add(i);
                 }

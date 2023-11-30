@@ -191,8 +191,13 @@ namespace Arenas {
             return ptr;
         }
 
+        public void Free<T>(in SlimUnsafeRef<T> items) where T : unmanaged {
+            Free(items.ToUnmanaged());
+        }
+
         public void Free<T>(in UnmanagedRef<T> items) where T : unmanaged {
-            if (!items.HasValue) {
+            T* cur;
+            if (!items.TryGetValue(out cur)) {
                 // can't free that ya silly bugger
                 return;
             }
@@ -200,7 +205,6 @@ namespace Arenas {
             enumVersion++;
 
             if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
-                var cur = items.Value;
                 for (int i = 0; i < items.ElementCount; i++, cur++) {
                     // free contents
                     ArenaContentsHelper.Free(cur);
@@ -210,8 +214,13 @@ namespace Arenas {
             _FreeValues((IntPtr)items.Value);
         }
 
+        public void Free(in SlimUnsafeRef items) {
+            Free(items.ToUnmanaged());
+        }
+
         public void Free(in UnmanagedRef items) {
-            if (!items.HasValue) {
+            IntPtr cur;
+            if (!items.TryGetValue(out cur)) {
                 // can't free that ya silly bugger
                 return;
             }
@@ -222,7 +231,6 @@ namespace Arenas {
             var elementSize = Marshal.SizeOf(items.Type);
 
             if (typeof(IArenaContents).IsAssignableFrom(items.Type)) {
-                var cur = items.Value;
                 for (int i = 0; i < items.ElementCount; i++) {
                     // free contents
                     free(cur);

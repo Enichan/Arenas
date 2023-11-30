@@ -13,12 +13,12 @@ namespace Arenas {
     public unsafe struct ArenaList<T> : IList<T> where T : unmanaged {
         private const int defaultCapacity = 4;
 
-        private UnmanagedRef<UnmanagedList> info;
+        private SlimUnsafeRef<UnmanagedList> info;
         private Arena arena;
 
         public ArenaList(Arena arena, int capacity = defaultCapacity) {
             this.arena = arena;
-            info = arena.Allocate(new UnmanagedList());
+            info = arena.Allocate(new UnmanagedList()).ToSlim();
 
             var minCapacity = Math.Max(capacity, defaultCapacity);
             var itemsRef = arena.AllocCount<T>(minCapacity);
@@ -212,8 +212,6 @@ namespace Arenas {
         IEnumerator IEnumerable.GetEnumerator() {
             return GetEnumerator();
         }
-
-        internal UnmanagedRef<UnmanagedList> GetUnmanagedList() { return info; }
 
         public T this[int index] {
             get {

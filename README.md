@@ -20,7 +20,7 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 - Copy `UnmanagedRef` types to arrays via `ToArray` and `CopyTo`
 - Generic `ArenaList<T>` type for storing lists inside an arena instance
 - Ability to free items via `IntPtr`
-- `SlimUnsafeRef` struct which caches fewer things than `UnmanagedRef` and is much smaller (16 bytes vs 40 bytes respectively)
+- `SlimUnsafeRef` struct which caches fewer things than `UnmanagedRef` and is much smaller (16 bytes vs 40 bytes for `UnmanagedRef` and 32 bytes for `UnmanagedRef<T>`)
 
 ## Samples
 
@@ -43,7 +43,7 @@ using (var arena = new Arena()) {
     Console.WriteLine(jack);
 
     // make a list of integers in the arena
-    var list = new ArenaList<int>(arena);
+    var list = new ArenaList<int>(arena) { 1, 2, 3 };
     for (int i = 10; i < 22; i++) {
         list.Add(i);
     }
