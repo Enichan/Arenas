@@ -9,9 +9,6 @@ using System.Threading.Tasks;
 namespace ArenasTest {
     class Program {
         static unsafe void Main(string[] args) {
-            Console.WriteLine(Marshal.SizeOf(typeof(UnmanagedRef)));
-            Console.WriteLine(Marshal.SizeOf(typeof(SlimUnsafeRef)));
-
             UnmanagedRef<Person> staleRefTest;
 
             using (var arena = new Arena()) {
