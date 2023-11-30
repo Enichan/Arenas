@@ -102,7 +102,7 @@ Create a blittable struct with managed references:
 ```csharp
 [StructLayout(LayoutKind.Sequential)]
 unsafe public struct Person : IArenaContents {
-    private Guid arenaID;
+    private ArenaID arenaID;
     private ManagedRef firstName;
     private ManagedRef lastName;
 
@@ -125,7 +125,7 @@ unsafe public struct Person : IArenaContents {
         set { lastName = lastName.Set(Arena.Get(arenaID), value); }
     }
 
-    void IArenaContents.SetArenaID(Guid value) { arenaID = value; }
+    void IArenaContents.SetArenaID(ArenaID value) { arenaID = value; }
 }
 ```
 
