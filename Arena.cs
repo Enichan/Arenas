@@ -30,22 +30,36 @@ namespace Arenas {
             if (ptr == IntPtr.Zero) {
                 throw new ArgumentNullException(nameof(ptr));
             }
+
             var header = ItemHeader.GetHeader(ptr);
             if (header.Type != typeof(T)) {
                 throw new InvalidOperationException("Type mismatch in header for pointer in UnmanagedRefFromPtr<T>(IntPtr), types do not match or address may be invalid.");
             }
-            return new UnmanagedRef<T>((T*)ptr, this, header.Version, header.Size / sizeof(T));
+
+            var version = new RefVersion(header.Version.Item, id);
+            if (!version.Valid) {
+                throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr<T>(IntPtr) did not point to a valid item.");
+            }
+
+            return new UnmanagedRef<T>((T*)ptr, this, version, header.Size / sizeof(T));
         }
 
         public UnmanagedRef UnmanagedRefFromPtr(IntPtr ptr) {
             if (ptr == IntPtr.Zero) {
                 throw new ArgumentNullException(nameof(ptr));
             }
+
             var header = ItemHeader.GetHeader(ptr);
             if (header.Type == typeof(Exception)) {
                 throw new InvalidOperationException("Invalid type in header for pointer in UnmanagedRefFromPtr(IntPtr), address may be invalid.");
             }
-            return new UnmanagedRef(header.Type, ptr, this, header.Version, header.Size / Marshal.SizeOf(header.Type));
+
+            var version = new RefVersion(header.Version.Item, id);
+            if (!version.Valid) {
+                throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr(IntPtr) did not point to a valid item.");
+            }
+
+            return new UnmanagedRef(header.Type, ptr, this, version, header.Size / Marshal.SizeOf(header.Type));
         }
 
         private Page AllocPage(int size) {
@@ -80,7 +94,7 @@ namespace Arenas {
 
                 // increment item version by 1 and set header
                 var prevVersion = ItemHeader.GetVersion(ptr);
-                version = new RefVersion(prevVersion.Item + 1, id);
+                version = new RefVersion(prevVersion.Item.Increment(true), id);
                 ItemHeader.SetHeader(ptr, new ItemHeader(GetTypeHandle(type), iSizeBytes, IntPtr.Zero, version)); // set header
             }
             else {
@@ -88,7 +102,7 @@ namespace Arenas {
 
                 // increment item version by 1
                 var prevVersion = ItemHeader.GetVersion(ptr);
-                version = new RefVersion(prevVersion.Item + 1, id);
+                version = new RefVersion(prevVersion.Item.Increment(true), id);
                 ItemHeader.SetVersion(ptr, version);
                 ItemHeader.SetTypeHandle(ptr, GetTypeHandle(type));
             }
@@ -590,11 +604,11 @@ namespace Arenas {
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private struct ItemHeader {
+        internal struct ItemHeader {
             public TypeHandle TypeHandle;
             public int Size;
             public IntPtr NextFree;
-            public RefVersion Version;
+            public RefVersion Version; // this must be last for ItemHeader.GetArenaID(IntPtr) to work
 
             public ItemHeader(TypeHandle typeHandle, int size, IntPtr next, RefVersion version) {
                 TypeHandle = typeHandle;
@@ -604,7 +618,7 @@ namespace Arenas {
             }
 
             public override string ToString() {
-                return $"ItemHeader(Type={GetTypeFromHandle(TypeHandle).FullName}, Size={Size}, Next=0x{NextFree.ToInt64():x}, Version=({Version.Arena},{Version.Item}))";
+                return $"ItemHeader(Type={GetTypeFromHandle(TypeHandle).FullName}, Size={Size}, Next=0x{NextFree.ToInt64():x}, Version=({Version}))";
             }
 
             public Type Type {
@@ -667,12 +681,17 @@ namespace Arenas {
 
             public static void Invalidate(IntPtr item) {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                header->Version = new RefVersion(header->Version.Item, ArenaID.Empty);
+                header->Version = new RefVersion(header->Version.Item.Invalidate(), ArenaID.Empty);
+            }
+
+            public static ArenaID GetArenaID(IntPtr item) {
+                var id = (ArenaID*)(item - sizeof(ArenaID));
+                return *id;
             }
         }
 
         [StructLayout(LayoutKind.Sequential)]
-        private readonly struct TypeHandle : IEquatable<TypeHandle> {
+        internal readonly struct TypeHandle : IEquatable<TypeHandle> {
             public readonly int Value;
 
             public TypeHandle(int value) {
@@ -689,7 +708,7 @@ namespace Arenas {
             }
 
             public override int GetHashCode() {
-                return Value.GetHashCode();
+                return 1909215196 + Value.GetHashCode();
             }
 
             public static bool operator ==(TypeHandle left, TypeHandle right) {
@@ -745,7 +764,7 @@ namespace Arenas {
                             throw new InvalidOperationException("Enumeration encountered an error; arena memory may be corrupted");
                         }
 
-                        if (header.Version.IsValid) {
+                        if (header.Version.Valid) {
                             current = localArena.UnmanagedRefFromPtr(ptr);
                             return true;
                         }

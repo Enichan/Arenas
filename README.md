@@ -26,6 +26,8 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 Do some stuff with arenas:
 
 ```csharp
+UnmanagedRef<Person> staleRefTest;
+
 using (var arena = new Arena()) {
     // allocate some people in the arena
     var john = arena.Allocate(new Person());
@@ -83,8 +85,15 @@ using (var arena = new Arena()) {
             break;
         }
     }
-    Console.WriteLine(isSame ? "Guid bytes match" : "Guid bytes don't match");
+    Console.WriteLine(isSame ? "ArenaID bytes match" : "ArenaID bytes don't match");
+
+    // final stale reference test for disposal
+    staleRefTest = arena.Allocate(new Person());
+    staleRefTest.Value->FirstName = "Stale";
+    staleRefTest.Value->LastName = "Reference";
 }
+
+Console.WriteLine($"Does stale reference have a value after disposal? {staleRefTest.HasValue}");
 ```
 
 Create a blittable struct with managed references:

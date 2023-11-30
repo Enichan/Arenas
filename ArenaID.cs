@@ -13,7 +13,7 @@ namespace Arenas {
             Value = value;
         }
 
-        #region IEquatable
+        #region Equality
         public override bool Equals(object obj) {
             return obj is ArenaID iD &&
                    Value == iD.Value;
@@ -24,7 +24,7 @@ namespace Arenas {
         }
 
         public override int GetHashCode() {
-            return Value.GetHashCode();
+            return 710438321 + Value.GetHashCode();
         }
 
         public static bool operator ==(ArenaID left, ArenaID right) {

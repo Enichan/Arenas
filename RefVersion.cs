@@ -12,11 +12,11 @@ namespace Arenas {
         public readonly ulong Value;
 
         [FieldOffset(0)]
-        public readonly int Item;
+        public readonly ItemVersion Item;
         [FieldOffset(sizeof(int))]
-        public readonly ArenaID Arena;
+        public readonly ArenaID Arena; // this must be last for ItemHeader.GetArenaID(IntPtr) to work
 
-        public RefVersion(int item, ArenaID arena) {
+        public RefVersion(ItemVersion item, ArenaID arena) {
             Value = 0;
             Item = item;
             Arena = arena;
@@ -31,7 +31,7 @@ namespace Arenas {
         }
 
         public override int GetHashCode() {
-            return Value.GetHashCode();
+            return 1688058797 + Value.GetHashCode();
         }
 
         public static bool operator ==(RefVersion left, RefVersion right) {
@@ -46,6 +46,6 @@ namespace Arenas {
             return $"RefVersion(Arena={Arena}, Item={Item})";
         }
 
-        public bool IsValid { get { return Arena.Value != 0; } }
+        public bool Valid { get { return Arena.Value != 0 && Item.Valid; } }
     }
 }

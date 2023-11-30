@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 namespace ArenasTest {
     class Program {
         static unsafe void Main(string[] args) {
+            UnmanagedRef<Person> staleRefTest;
+
             using (var arena = new Arena()) {
                 // allocate some people in the arena
                 var john = arena.Allocate(new Person());
@@ -67,7 +69,14 @@ namespace ArenasTest {
                     }
                 }
                 Console.WriteLine(isSame ? "ArenaID bytes match" : "ArenaID bytes don't match");
+
+                // final stale reference test for disposal
+                staleRefTest = arena.Allocate(new Person());
+                staleRefTest.Value->FirstName = "Stale";
+                staleRefTest.Value->LastName = "Reference";
             }
+
+            Console.WriteLine($"Does stale reference have a value after disposal? {staleRefTest.HasValue}");
         }
     }
 }
