@@ -301,7 +301,7 @@ namespace Arenas {
             if (currentHandlePtr != IntPtr.Zero) {
                 var currentHandle = GCHandle.FromIntPtr(currentHandlePtr);
                 var currentTarget = currentHandle.Target;
-                Debug.Assert(currentTarget != null);
+                Debug.Assert(!(currentTarget is null));
 
                 ObjectEntry currentManagedEntry;
                 if (!objToPtr.TryGetValue(currentTarget, out currentManagedEntry)) {

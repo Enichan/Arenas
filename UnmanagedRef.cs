@@ -105,8 +105,8 @@ namespace Arenas {
         }
 
         public Arena Arena { get { return arena; } }
-        public T* Value { get { return !arena.VersionsMatch(version, (IntPtr)pointer) ? null : pointer; } }
-        public bool HasValue { get { return arena.VersionsMatch(version, (IntPtr)pointer) && pointer != null; } }
+        public T* Value { get { return pointer != null && !arena.VersionsMatch(version, (IntPtr)pointer) ? null : pointer; } }
+        public bool HasValue { get { return pointer != null && arena.VersionsMatch(version, (IntPtr)pointer); } }
         public RefVersion Version { get { return version; } }
         public int ElementCount { get { return elementCount; } }
         public int Size { get { return elementCount * sizeof(T); } }
@@ -212,8 +212,8 @@ namespace Arenas {
 
         public Type Type { get { return type; } }
         public Arena Arena { get { return arena; } }
-        public IntPtr Value { get { return !arena.VersionsMatch(version, pointer) ? IntPtr.Zero : pointer; } }
-        public bool HasValue { get { return arena.VersionsMatch(version, pointer) && pointer != null; } }
+        public IntPtr Value { get { return pointer != IntPtr.Zero && !arena.VersionsMatch(version, pointer) ? IntPtr.Zero : pointer; } }
+        public bool HasValue { get { return pointer != IntPtr.Zero && arena.VersionsMatch(version, pointer); } }
         public RefVersion Version { get { return version; } }
         public int ElementCount { get { return elementCount; } }
         public int Size { get { return elementCount * Marshal.SizeOf(type); } }

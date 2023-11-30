@@ -23,10 +23,10 @@ namespace Arenas {
 
         public UnmanagedRef<T> ToUnmanaged() {
             var arena = Arena;
-            if (arena == null) {
+            if (arena is null) {
                 throw new InvalidOperationException($"Cannot convert SlimUnsafeRef<{typeof(T)}> to UnmanagedRef<{typeof(T)}>: not a valid reference (arena was null)");
             }
-            return arena.UnmanagedRefFromPtr<T>(pointer);
+            return arena.UnmanagedRefFromPtr(pointer);
         }
 
         public override string ToString() {
@@ -55,20 +55,20 @@ namespace Arenas {
         public T* Value {
             get {
                 var arena = Arena;
-                if (arena == null) {
+                if (arena is null) {
                     return null;
                 }
-                return !arena.VersionsMatch(version, (IntPtr)pointer) ? null : pointer;
+                return pointer != null && !arena.VersionsMatch(version, (IntPtr)pointer) ? null : pointer;
             }
         }
 
         public bool HasValue {
             get {
                 var arena = Arena;
-                if (arena == null) {
+                if (arena is null) {
                     return false;
                 }
-                return arena.VersionsMatch(version, (IntPtr)pointer) && pointer != null;
+                return pointer != null && arena.VersionsMatch(version, (IntPtr)pointer);
             }
         }
 
@@ -93,7 +93,7 @@ namespace Arenas {
 
         public UnmanagedRef ToUnmanaged() {
             var arena = Arena;
-            if (arena == null) {
+            if (arena is null) {
                 throw new InvalidOperationException($"Cannot convert SlimUnsafeRef to UnmanagedRef: not a valid reference (arena was null)");
             }
             return arena.UnmanagedRefFromPtr(pointer);
@@ -101,7 +101,7 @@ namespace Arenas {
 
         public UnmanagedRef<T> ToUnmanaged<T>() where T : unmanaged {
             var arena = Arena;
-            if (arena == null) {
+            if (arena is null) {
                 throw new InvalidOperationException($"Cannot convert SlimUnsafeRef to UnmanagedRef<{typeof(T)}>: not a valid reference (arena was null)");
             }
             return arena.UnmanagedRefFromPtr<T>(pointer);
@@ -114,7 +114,7 @@ namespace Arenas {
             }
 
             var type = Type;
-            if (type == null) {
+            if (type is null) {
                 return string.Empty;
             }
 
@@ -145,20 +145,20 @@ namespace Arenas {
         public IntPtr Value { 
             get {
                 var arena = Arena;
-                if (arena == null) {
+                if (arena is null) {
                     return IntPtr.Zero;
                 }
-                return !arena.VersionsMatch(version, pointer) ? IntPtr.Zero : pointer; 
+                return pointer != IntPtr.Zero && !arena.VersionsMatch(version, pointer) ? IntPtr.Zero : pointer; 
             } 
         }
 
         public bool HasValue { 
             get {
                 var arena = Arena;
-                if (arena == null) {
+                if (arena is null) {
                     return false;
                 }
-                return arena.VersionsMatch(version, pointer) && pointer != null; 
+                return pointer != IntPtr.Zero && arena.VersionsMatch(version, pointer); 
             } 
         }
 

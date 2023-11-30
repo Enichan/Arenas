@@ -20,7 +20,7 @@ namespace Arenas {
                 }
             }
 
-            if (freeMethodBase == null) {
+            if (freeMethodBase is null) {
                 throw new MissingMethodException(nameof(ArenaContentsHelper), "Expected method `void Free<T>(IntPtr pointer) where T : unmanaged` in ArenaContentsHelper");
             }
         }

@@ -13,12 +13,13 @@ namespace Arenas {
     public unsafe struct ArenaList<T> : IList<T> where T : unmanaged {
         private const int defaultCapacity = 4;
 
-        private SlimUnsafeRef<UnmanagedList> info;
-        private Arena arena;
+        private UnmanagedRef<UnmanagedList> info;
 
         public ArenaList(Arena arena, int capacity = defaultCapacity) {
-            this.arena = arena;
-            info = arena.Allocate(new UnmanagedList()).ToSlim();
+            if (arena is null) {
+                throw new ArgumentNullException(nameof(arena));
+            }
+            info = arena.Allocate(new UnmanagedList());
 
             var minCapacity = Math.Max(capacity, defaultCapacity);
             var itemsRef = arena.AllocCount<T>(minCapacity);
@@ -28,20 +29,20 @@ namespace Arenas {
         }
 
         public void Free() {
-            if (arena is null) {
+            if (Arena is null) {
                 throw new InvalidOperationException("Cannot Free UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot Free UnmanagedList<T>: list memory has previously been freed");
             }
 
-            var items = arena.UnmanagedRefFromPtr<T>(info.Value->Items);
-            arena.Free(items);
-            arena.Free(info);
+            var items = Arena.UnmanagedRefFromPtr<T>(info.Value->Items);
+            Arena.Free(items);
+            Arena.Free(info);
         }
 
         public void Clear() {
-            if (arena is null) {
+            if (Arena is null) {
                 throw new InvalidOperationException("Cannot Clear UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
             if (!info.HasValue) {
@@ -68,18 +69,18 @@ namespace Arenas {
 
             var newMinCapacity = info.Value->Capacity * 2;
 
-            var items = arena.UnmanagedRefFromPtr<T>(info.Value->Items);
-            var newItems = arena.AllocCount<T>(newMinCapacity);
+            var items = Arena.UnmanagedRefFromPtr<T>(info.Value->Items);
+            var newItems = Arena.AllocCount<T>(newMinCapacity);
             info.Value->Capacity = newItems.ElementCount; // we might get more capacity than requested
 
             Buffer.MemoryCopy(items.Value, newItems.Value, newItems.Size, items.Size);
-            arena.Free(items);
+            Arena.Free(items);
 
             info.Value->Items = (IntPtr)newItems.Value;
         }
 
         public void Add(T item) {
-            if (arena is null) {
+            if (Arena is null) {
                 throw new InvalidOperationException("Cannot Add item to UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
             if (!info.HasValue) {
@@ -92,7 +93,7 @@ namespace Arenas {
         }
 
         public void Insert(int index, T item) {
-            if (arena is null) {
+            if (Arena is null) {
                 throw new InvalidOperationException("Cannot Insert item into UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
             if (!info.HasValue) {
@@ -119,7 +120,7 @@ namespace Arenas {
         }
 
         public void RemoveAt(int index) {
-            if (arena is null) {
+            if (Arena is null) {
                 throw new InvalidOperationException("Cannot RemoveAt in UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
             if (!info.HasValue) {
@@ -141,7 +142,7 @@ namespace Arenas {
         }
 
         public bool Remove(T item) {
-            if (arena is null) {
+            if (Arena is null) {
                 throw new InvalidOperationException("Cannot Remove item from UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
             if (!info.HasValue) {
@@ -156,7 +157,7 @@ namespace Arenas {
         }
 
         public int IndexOf(T item) {
-            if (arena is null) {
+            if (Arena is null) {
                 throw new InvalidOperationException("Cannot get IndexOf item in UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
             if (!info.HasValue) {
@@ -175,7 +176,7 @@ namespace Arenas {
         }
 
         public bool Contains(T item) {
-            if (arena is null) {
+            if (Arena is null) {
                 throw new InvalidOperationException("Cannot check if UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
             if (!info.HasValue) {
@@ -185,18 +186,18 @@ namespace Arenas {
         }
 
         public void CopyTo(T[] array, int destIndex) {
-            if (arena is null) {
+            if (Arena is null) {
                 throw new InvalidOperationException("Cannot CopyTo array from UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot CopyTo array from UnmanagedList<T>: list memory has previously been freed");
             }
-            var items = arena.UnmanagedRefFromPtr<T>(info.Value->Items);
+            var items = Arena.UnmanagedRefFromPtr<T>(info.Value->Items);
             items.CopyTo(array, destIndex, 0, info.Value->Count);
         }
 
         public Enumerator GetEnumerator() {
-            if (arena is null) {
+            if (Arena is null) {
                 throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
             if (!info.HasValue) {
@@ -215,7 +216,7 @@ namespace Arenas {
 
         public T this[int index] {
             get {
-                if (arena is null) {
+                if (Arena is null) {
                     throw new InvalidOperationException("Cannot get item at index in UnmanagedList<T>: list has not been properly initialized with arena reference");
                 }
                 if (!info.HasValue) {
@@ -227,7 +228,7 @@ namespace Arenas {
                 return ((T*)info.Value->Items)[index];
             }
             set {
-                if (arena is null) {
+                if (Arena is null) {
                     throw new InvalidOperationException("Cannot set item at index in UnmanagedList<T>: list has not been properly initialized with arena reference");
                 }
                 if (!info.HasValue) {
@@ -251,7 +252,7 @@ namespace Arenas {
         }
 
         public bool IsAllocated { get { return info.HasValue; } }
-        public Arena Arena { get { return arena; } }
+        public Arena Arena { get { return info.Arena; } }
         bool ICollection<T>.IsReadOnly { get { return false; } }
 
         [Serializable]
