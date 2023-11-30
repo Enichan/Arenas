@@ -13,8 +13,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="ArenasTestCore\**" />
     <Compile Remove="ArenasTest\**" />
+    <EmbeddedResource Remove="ArenasTestCore\**" />
     <EmbeddedResource Remove="ArenasTest\**" />
+    <None Remove="ArenasTestCore\**" />
     <None Remove="ArenasTest\**" />
   </ItemGroup>
 
