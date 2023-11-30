@@ -64,7 +64,7 @@ namespace ArenasTestCore {
                 Data = data;
             }
 
-            public override string ToString() => Data == null || Length <= 0 ? "" : new string(Data, 0, Length);
+            public override string ToString() => Data is null || Length <= 0 ? "" : new string(Data, 0, Length);
         }
     }
 }
