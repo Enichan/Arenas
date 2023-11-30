@@ -80,7 +80,7 @@ namespace Arenas {
 
                 // increment item version by 1 and set header
                 var prevVersion = ItemHeader.GetVersion(ptr);
-                version = new RefVersion(prevVersion.Item + 1, Version);
+                version = new RefVersion(prevVersion.Item + 1, id);
                 ItemHeader.SetHeader(ptr, new ItemHeader(GetTypeHandle(type), iSizeBytes, IntPtr.Zero, version)); // set header
             }
             else {
@@ -88,7 +88,7 @@ namespace Arenas {
 
                 // increment item version by 1
                 var prevVersion = ItemHeader.GetVersion(ptr);
-                version = new RefVersion(prevVersion.Item + 1, Version);
+                version = new RefVersion(prevVersion.Item + 1, id);
                 ItemHeader.SetVersion(ptr, version);
                 ItemHeader.SetTypeHandle(ptr, GetTypeHandle(type));
             }
@@ -306,7 +306,7 @@ namespace Arenas {
         }
 
         public bool VersionsMatch(RefVersion version, IntPtr item) {
-            return version.Arena == Version && version == ItemHeader.GetVersion(item);
+            return version.Arena == id && version == ItemHeader.GetVersion(item);
         }
 
         public void Clear() {
@@ -317,15 +317,14 @@ namespace Arenas {
             enumVersion++;
 
             if (disposing) {
-                Version = 0;
+                id = ArenaID.Empty;
             }
             else {
-                Version = (Version + 1) & 0x7FFFFFFF; // invalidate old UnmanagedRefs
+                var oldID = id;
+                id = ArenaID.Empty;
 
-                // overflow protection
-                if (Version == 0) {
-                    Version = 1;
-                }
+                Remove(oldID);
+                id = Add(this);
             }
 
             // free GCHandles
@@ -397,7 +396,6 @@ namespace Arenas {
         #endregion
 
         public bool IsDisposed { get { return disposedValue; } }
-        public int Version { get; private set; }
 
         #region Static
         [DllImport("kernel32.dll")]
@@ -669,7 +667,7 @@ namespace Arenas {
 
             public static void Invalidate(IntPtr item) {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                header->Version = new RefVersion(header->Version.Item, 0);
+                header->Version = new RefVersion(header->Version.Item, ArenaID.Empty);
             }
         }
 

@@ -14,9 +14,9 @@ namespace Arenas {
         [FieldOffset(0)]
         public readonly int Item;
         [FieldOffset(sizeof(int))]
-        public readonly int Arena;
+        public readonly ArenaID Arena;
 
-        public RefVersion(int item, int arena) {
+        public RefVersion(int item, ArenaID arena) {
             Value = 0;
             Item = item;
             Arena = arena;
@@ -46,6 +46,6 @@ namespace Arenas {
             return $"RefVersion(Arena={Arena}, Item={Item})";
         }
 
-        public bool IsValid { get { return Arena != 0; } }
+        public bool IsValid { get { return Arena.Value != 0; } }
     }
 }
