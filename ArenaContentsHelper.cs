@@ -77,8 +77,8 @@ namespace Arenas {
 
         #region SetArenaID
         // prevent boxing of IArenaContents when calling SetArenaID
-        private class ArenaContentsSetID : InterfaceAction<Guid> {
-            public static void SetArenaID<T>(T* self, Guid value) where T : unmanaged, IArenaContents {
+        private class ArenaContentsSetID : InterfaceAction<ArenaID> {
+            public static void SetArenaID<T>(T* self, ArenaID value) where T : unmanaged, IArenaContents {
                 self->SetArenaID(value);
             }
 
@@ -95,7 +95,7 @@ namespace Arenas {
             }
         }
 
-        public static void SetArenaID<T>(T* pointer, Guid value) where T : unmanaged {
+        public static void SetArenaID<T>(T* pointer, ArenaID value) where T : unmanaged {
             if (pointer == null) {
                 return;
             }

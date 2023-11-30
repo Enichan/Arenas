@@ -66,7 +66,7 @@ namespace ArenasTest {
                         break;
                     }
                 }
-                Console.WriteLine(isSame ? "Guid bytes match" : "Guid bytes don't match");
+                Console.WriteLine(isSame ? "ArenaID bytes match" : "ArenaID bytes don't match");
             }
         }
     }

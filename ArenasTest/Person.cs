@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace Arenas {
     [StructLayout(LayoutKind.Sequential)]
     unsafe public struct Person : IArenaContents {
-        private Guid arenaID;
+        private ArenaID arenaID;
         private ManagedRef firstName;
         private ManagedRef lastName;
 
@@ -27,6 +27,6 @@ namespace Arenas {
             set { lastName = lastName.Set(Arena.Get(arenaID), value); }
         }
 
-        void IArenaContents.SetArenaID(Guid value) { arenaID = value; }
+        void IArenaContents.SetArenaID(ArenaID value) { arenaID = value; }
     }
 }

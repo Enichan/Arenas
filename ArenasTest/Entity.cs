@@ -13,7 +13,7 @@ namespace Arenas {
             Y = y;
             Z = z;
             name = new ManagedRef();
-            ArenaID = Guid.Empty;
+            ArenaID = ArenaID.Empty;
         }
 
         void IArenaContents.Free() {
@@ -32,7 +32,7 @@ namespace Arenas {
         }
 
         // yucky boilerplate :(
-        public Guid ArenaID { get; private set; }
-        void IArenaContents.SetArenaID(Guid value) { ArenaID = value; }
+        public ArenaID ArenaID { get; private set; }
+        void IArenaContents.SetArenaID(ArenaID value) { ArenaID = value; }
     }
 }

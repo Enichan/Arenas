@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 
 namespace Arenas {
     public interface IArenaContents {
-        void SetArenaID(Guid value);
+        void SetArenaID(ArenaID value);
         void Free();
     }
 }

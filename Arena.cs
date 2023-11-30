@@ -14,7 +14,7 @@ namespace Arenas {
         private bool disposedValue;
         private List<Page> pages;
         private Dictionary<int, Freelist> freelists;
-        private Guid id;
+        private ArenaID id;
         private int enumVersion;
 
         public Arena() {
@@ -340,19 +340,14 @@ namespace Arenas {
             freelists.Clear();
             objToPtr.Clear();
 
-            if (id != Guid.Empty) {
-                arenas.Remove(id);
+            if (id != ArenaID.Empty) {
+                Remove(id);
             }
 
             if (!disposing) {
                 // allocate one page to start and then try and register a unique ID
                 AllocPage(PageSize);
-
-                id = Guid.NewGuid();
-                while (arenas.ContainsKey(id)) {
-                    id = Guid.NewGuid();
-                }
-                arenas[id] = this;
+                id = Add(this);
             }
         }
 
@@ -409,7 +404,8 @@ namespace Arenas {
         private static extern void RtlZeroMemory(IntPtr dst, UIntPtr length);
         private delegate void ZeroMemoryDelegate(IntPtr dst, UIntPtr length);
 
-        private static Dictionary<Guid, Arena> arenas;
+        private static Dictionary<ArenaID, Arena> arenas;
+        private static object arenasLock;
         private static Dictionary<Type, TypeHandle> typeToHandle;
         private static Dictionary<TypeHandle, Type> handleToType;
         private static ZeroMemoryDelegate ZeroMemory;
@@ -422,7 +418,8 @@ namespace Arenas {
                 ZeroMemory = ZeroMemPlatformIndependent;
             }
 
-            arenas = new Dictionary<Guid, Arena>();
+            arenas = new Dictionary<ArenaID, Arena>();
+            arenasLock = new object();
             typeToHandle = new Dictionary<Type, TypeHandle>();
             handleToType = new Dictionary<TypeHandle, Type>();
 
@@ -431,12 +428,33 @@ namespace Arenas {
             handleToType[new TypeHandle(0)] = typeof(void);
         }
 
-        public static Arena Get(Guid id) {
-            Arena arena;
-            if (!arenas.TryGetValue(id, out arena)) {
-                return null;
+        private static ArenaID Add(Arena arena) {
+            while (true) {
+                var id = ArenaID.NewID();
+                lock (arenasLock) {
+                    if (arenas.ContainsKey(id)) {
+                        continue;
+                    }
+                    arenas[id] = arena;
+                }
+                return id;
             }
-            return arena;
+        }
+
+        private static void Remove(ArenaID id) {
+            lock (arenasLock) {
+                arenas.Remove(id);
+            }
+        }
+
+        public static Arena Get(ArenaID id) {
+            lock (arenasLock) {
+                Arena arena;
+                if (!arenas.TryGetValue(id, out arena)) {
+                    return null;
+                }
+                return arena;
+            }
         }
 
         private static TypeHandle GetTypeHandle(Type type) {
