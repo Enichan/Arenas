@@ -22,6 +22,15 @@ namespace Arenas {
             this.elementCount = elementCount;
         }
 
+        public bool TryGetValue(out T* ptr) {
+            ptr = Value;
+            return ptr != null;
+        }
+
+        public SlimUnsafeRef<T> ToSlim() {
+            return new SlimUnsafeRef<T>(pointer, version);
+        }
+
         public void CopyTo(T[] dest) {
             CopyTo(dest, 0, 0, elementCount);
         }
@@ -78,6 +87,14 @@ namespace Arenas {
             return new UnmanagedRef<T>((T*)(IntPtr)uref, uref.Arena, uref.Version, uref.ElementCount);
         }
 
+        public static explicit operator SlimUnsafeRef<T>(UnmanagedRef<T> uref) {
+            return new SlimUnsafeRef<T>(uref.pointer, uref.version);
+        }
+
+        public static explicit operator SlimUnsafeRef(UnmanagedRef<T> uref) {
+            return new SlimUnsafeRef((IntPtr)uref.pointer, uref.version);
+        }
+
         public T* this[int index] {
             get {
                 if (index < 0 || index >= ElementCount) {
@@ -110,6 +127,15 @@ namespace Arenas {
             this.arena = arena ?? throw new ArgumentNullException(nameof(arena));
             this.version = version;
             this.elementCount = elementCount;
+        }
+
+        public bool TryGetValue(out IntPtr ptr) {
+            ptr = Value;
+            return ptr != IntPtr.Zero;
+        }
+
+        public SlimUnsafeRef ToSlim() {
+            return new SlimUnsafeRef(pointer, version);
         }
 
         public void CopyTo<T>(T[] dest) {
@@ -169,6 +195,10 @@ namespace Arenas {
 
         public static explicit operator IntPtr(UnmanagedRef uref) {
             return uref.pointer;
+        }
+
+        public static explicit operator SlimUnsafeRef(UnmanagedRef uref) {
+            return new SlimUnsafeRef(uref.pointer, uref.version);
         }
 
         public IntPtr this[int index] {

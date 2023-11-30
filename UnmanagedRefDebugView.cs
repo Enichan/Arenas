@@ -13,6 +13,10 @@ namespace Arenas {
             this.uref = uref;
         }
 
+        public UnmanagedRefDebugView(SlimUnsafeRef<T> sref) {
+            this.uref = sref.ToUnmanaged();
+        }
+
         public T[] Contents {
             get {
                 return uref.ToArray();
@@ -32,6 +36,10 @@ namespace Arenas {
 
         public UnmanagedRefDebugView(UnmanagedRef uref) {
             this.uref = uref;
+        }
+
+        public UnmanagedRefDebugView(SlimUnsafeRef sref) {
+            this.uref = sref.ToUnmanaged();
         }
 
         public object[] Contents {

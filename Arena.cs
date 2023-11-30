@@ -26,13 +26,19 @@ namespace Arenas {
             Clear(false);
         }
 
+        public UnmanagedRef<T> UnmanagedRefFromPtr<T>(T* ptr) where T : unmanaged {
+            return UnmanagedRefFromPtr<T>((IntPtr)ptr);
+        }
+
         public UnmanagedRef<T> UnmanagedRefFromPtr<T>(IntPtr ptr) where T : unmanaged {
             if (ptr == IntPtr.Zero) {
                 throw new ArgumentNullException(nameof(ptr));
             }
 
             var header = ItemHeader.GetHeader(ptr);
-            if (header.Type != typeof(T)) {
+
+            Type type;
+            if (!TryGetTypeFromHandle(header.TypeHandle, out type) || type != typeof(T)) {
                 throw new InvalidOperationException("Type mismatch in header for pointer in UnmanagedRefFromPtr<T>(IntPtr), types do not match or address may be invalid.");
             }
 
@@ -50,7 +56,9 @@ namespace Arenas {
             }
 
             var header = ItemHeader.GetHeader(ptr);
-            if (header.Type == typeof(Exception)) {
+
+            Type type;
+            if (!TryGetTypeFromHandle(header.TypeHandle, out type)) {
                 throw new InvalidOperationException("Invalid type in header for pointer in UnmanagedRefFromPtr(IntPtr), address may be invalid.");
             }
 
@@ -59,7 +67,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr(IntPtr) did not point to a valid item.");
             }
 
-            return new UnmanagedRef(header.Type, ptr, this, version, header.Size / Marshal.SizeOf(header.Type));
+            return new UnmanagedRef(type, ptr, this, version, header.Size / Marshal.SizeOf(type));
         }
 
         private Page AllocPage(int size) {
@@ -420,6 +428,7 @@ namespace Arenas {
         private static object arenasLock;
         private static Dictionary<Type, TypeHandle> typeToHandle;
         private static Dictionary<TypeHandle, Type> handleToType;
+        private static object typeHandleLock;
         private static ZeroMemoryDelegate ZeroMemory;
 
         static Arena() {
@@ -432,17 +441,16 @@ namespace Arenas {
 
             arenas = new Dictionary<ArenaID, Arena>();
             arenasLock = new object();
+
             typeToHandle = new Dictionary<Type, TypeHandle>();
             handleToType = new Dictionary<TypeHandle, Type>();
-
-            // handle 0 should be void type
-            typeToHandle[typeof(void)] = new TypeHandle(0);
-            handleToType[new TypeHandle(0)] = typeof(void);
+            typeHandleLock = new object();
         }
 
         private static ArenaID Add(Arena arena) {
             while (true) {
                 var id = ArenaID.NewID();
+                Debug.Assert(id.Value != 0);
                 lock (arenasLock) {
                     if (arenas.ContainsKey(id)) {
                         continue;
@@ -460,6 +468,10 @@ namespace Arenas {
         }
 
         public static Arena Get(ArenaID id) {
+            if (id.Value == 0) {
+                return null;
+            }
+
             lock (arenasLock) {
                 Arena arena;
                 if (!arenas.TryGetValue(id, out arena)) {
@@ -469,24 +481,46 @@ namespace Arenas {
             }
         }
 
-        private static TypeHandle GetTypeHandle(Type type) {
+        internal static TypeHandle GetTypeHandle(Type type) {
             TypeHandle handle;
-            if (!typeToHandle.TryGetValue(type, out handle)) {
-                typeToHandle[type] = handle = new TypeHandle(typeToHandle.Count);
-                if (handle.Value == 0) {
-                    throw new OverflowException("Arena.TypeHandle value overflow: too many types");
+            lock (typeHandleLock) {
+                if (!typeToHandle.TryGetValue(type, out handle)) {
+                    typeToHandle[type] = handle = new TypeHandle(typeToHandle.Count + 1);
+                    if (handle.Value == 0) {
+                        throw new OverflowException("Arena.TypeHandle value overflow: too many types");
+                    }
+                    handleToType[handle] = type;
                 }
-                handleToType[handle] = type;
             }
             return handle;
         }
 
-        private static Type GetTypeFromHandle(TypeHandle handle) {
-            Type type;
-            if (!handleToType.TryGetValue(handle, out type)) {
+        internal static Type GetTypeFromHandle(TypeHandle handle) {
+            if (handle.Value == 0) {
                 return typeof(Exception);
             }
+
+            Type type;
+            lock (typeHandleLock) {
+                if (!handleToType.TryGetValue(handle, out type)) {
+                    return typeof(Exception);
+                }
+            }
             return type;
+        }
+
+        internal static bool TryGetTypeFromHandle(TypeHandle handle, out Type type) {
+            type = null;
+            if (handle.Value == 0) {
+                return false;
+            }
+
+            lock (typeHandleLock) {
+                if (!handleToType.TryGetValue(handle, out type)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         // http://graphics.stanford.edu/%7Eseander/bithacks.html#RoundUpPowerOf2
@@ -621,12 +655,6 @@ namespace Arenas {
                 return $"ItemHeader(Type={GetTypeFromHandle(TypeHandle).FullName}, Size={Size}, Next=0x{NextFree.ToInt64():x}, Version=({Version}))";
             }
 
-            public Type Type {
-                get {
-                    return GetTypeFromHandle(TypeHandle);
-                }
-            }
-
             // helper functions for manipulating an item header, which is always located
             // in memory right before where the item is allocated
             public static void SetVersion(IntPtr item, RefVersion version) {
@@ -665,6 +693,9 @@ namespace Arenas {
             }
 
             public static TypeHandle GetTypeHandle(IntPtr item) {
+                if (item == IntPtr.Zero) {
+                    return new TypeHandle(0);
+                }
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 return header->TypeHandle;
             }
@@ -685,6 +716,9 @@ namespace Arenas {
             }
 
             public static ArenaID GetArenaID(IntPtr item) {
+                if (item == IntPtr.Zero) {
+                    return ArenaID.Empty;
+                }
                 var id = (ArenaID*)(item - sizeof(ArenaID));
                 return *id;
             }
@@ -760,7 +794,8 @@ namespace Arenas {
                         var header = ItemHeader.GetHeader(ptr);
                         offset += header.Size + sizeof(ItemHeader);
 
-                        if (header.Type == typeof(Exception) || header.Size < 0 || offset < 0 || offset > curPage.Offset) {
+                        Type type;
+                        if (!TryGetTypeFromHandle(header.TypeHandle, out type) || header.Size < 0 || offset < 0 || offset > curPage.Offset) {
                             throw new InvalidOperationException("Enumeration encountered an error; arena memory may be corrupted");
                         }
 
