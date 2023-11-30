@@ -13,7 +13,7 @@ namespace Arenas {
         private readonly SlimUnsafeRef<char> contents;
 
         public ArenaString(Arena arena, string source) {
-            if (arena == null) {
+            if (arena is null) {
                 throw new ArgumentNullException(nameof(arena));
             }
 
@@ -23,7 +23,7 @@ namespace Arenas {
         }
 
         public ArenaString(Arena arena, int capacity) {
-            if (arena == null) {
+            if (arena is null) {
                 throw new ArgumentNullException(nameof(arena));
             }
 
@@ -32,7 +32,7 @@ namespace Arenas {
 
         private char* InitCopy(out int capacity) {
             var arena = contents.Arena;
-            if (arena == null) {
+            if (arena is null) {
                 capacity = 0;
                 return null;
             }
@@ -145,7 +145,7 @@ namespace Arenas {
 
         public void Free() {
             var arena = contents.Arena;
-            if (arena != null) {
+            if (!(arena is null)) {
                 arena.Free(in contents);
             }
         }
