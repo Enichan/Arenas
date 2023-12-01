@@ -21,6 +21,7 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 - Generic `ArenaList<T>` type for storing lists inside an arena instance
 - Ability to free items via `IntPtr`
 - `SlimUnsafeRef` struct which caches fewer things than `UnmanagedRef` and is much smaller (16 bytes vs 40 bytes for `UnmanagedRef` and 32 bytes for `UnmanagedRef<T>`)
+- `SlimUnsafeRef` struct is blittable and can be stored inside arenas (see samples)
 
 ## Samples
 
@@ -198,9 +199,38 @@ class Program {
 }
 ```
 
+Store references to items in arena in ArenaList:
+
+```csharp
+using (var arena = new Arena()) {
+    // allocate a list
+    var people = new ArenaList<SlimUnsafeRef>(arena);
+
+    // allocate some people references
+    var john = arena.Allocate(new Person());
+    john.Value->FirstName = "John";
+    john.Value->LastName = "Doe";
+
+    var jack = arena.Allocate(new Person());
+    jack.Value->FirstName = "Jack";
+    jack.Value->LastName = "Black";
+
+    // store references inside the list
+    people.Add(john);
+    people.Add(jack);
+
+    // iterate over unmanaged list and write out all the people
+    foreach (var item in people) {
+        var person = item.As<Person>();
+        Console.WriteLine(*person);
+    }
+}
+```
+
 ## Potential future work
 
 - More arena-specific generic collections like Dictionary/HashSet
+- Arena-specific string type
 - Custom per-arena tracing GC?
 
 ## Should I use this in production?
