@@ -201,6 +201,13 @@ namespace Arenas {
             return new SlimUnsafeRef(uref.pointer, uref.version);
         }
 
+        public T* As<T>() where T : unmanaged {
+            if (Type != typeof(T)) {
+                return null;
+            }
+            return (T*)Value;
+        }
+
         public IntPtr this[int index] {
             get {
                 if (index < 0 || index >= ElementCount) {

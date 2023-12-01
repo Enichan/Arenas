@@ -7,6 +7,7 @@ using System.Text;
 namespace Arenas {
     [DebuggerTypeProxy(typeof(UnmanagedRefDebugView<>))]
     [DebuggerDisplay("{HasValue ? ToString() : null}")]
+    [StructLayout(LayoutKind.Sequential)]
     unsafe readonly public struct SlimUnsafeRef<T> where T : unmanaged {
         private readonly T* pointer;
         private readonly RefVersion version;
@@ -77,6 +78,7 @@ namespace Arenas {
 
     [DebuggerTypeProxy(typeof(UnmanagedRefDebugView))]
     [DebuggerDisplay("{HasValue ? ToString() : null}")]
+    [StructLayout(LayoutKind.Sequential)]
     unsafe readonly public struct SlimUnsafeRef {
         private readonly IntPtr pointer;
         private readonly RefVersion version;
@@ -124,6 +126,13 @@ namespace Arenas {
 
         public static explicit operator IntPtr(SlimUnsafeRef uref) {
             return uref.pointer;
+        }
+
+        public T* As<T>() where T : unmanaged {
+            if (Type != typeof(T)) {
+                return null;
+            }
+            return (T*)Value;
         }
 
         public Type Type { 

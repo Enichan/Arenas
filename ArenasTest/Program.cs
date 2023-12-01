@@ -80,6 +80,36 @@ namespace ArenasTest {
             }
 
             Console.WriteLine($"Does stale reference have a value after disposal? {staleRefTest.HasValue}");
+
+            Console.WriteLine();
+            Console.WriteLine("Running unmanaged list of pointers code");
+            UnmanagedPtrList();
+        }
+
+        static unsafe void UnmanagedPtrList() {
+            using (var arena = new Arena()) {
+                // allocate a list
+                var people = new ArenaList<SlimUnsafeRef>(arena);
+
+                // allocate some people references
+                var john = arena.Allocate(new Person());
+                john.Value->FirstName = "John";
+                john.Value->LastName = "Doe";
+
+                var jack = arena.Allocate(new Person());
+                jack.Value->FirstName = "Jack";
+                jack.Value->LastName = "Black";
+
+                // store references inside the list
+                people.Add(john);
+                people.Add(jack);
+
+                // iterate over unmanaged list and write out all the people
+                foreach (var item in people) {
+                    var person = item.As<Person>();
+                    Console.WriteLine(*person);
+                }
+            }
         }
     }
 }
