@@ -9,26 +9,20 @@ using System.Threading.Tasks;
 namespace Arenas {
     [DebuggerTypeProxy(typeof(UnmanagedRefDebugView<>))]
     [DebuggerDisplay("{HasValue ? ToString() : null}")]
-    unsafe readonly public struct UnmanagedRef<T> where T : unmanaged {
-        private readonly T* pointer;
-        private readonly RefVersion version;
+    unsafe readonly public struct UnmanagedRef<T> : IUnmanagedRef, IEquatable<UnmanagedRef<T>> where T : unmanaged {
+        public readonly UnsafeRef Reference;
         private readonly Arena arena;
         private readonly int elementCount;
 
         public UnmanagedRef(T* pointer, Arena arena, RefVersion version, int elementCount) {
-            this.pointer = pointer;
+            this.Reference = new UnsafeRef((IntPtr)pointer, version);
             this.arena = arena ?? throw new ArgumentNullException(nameof(arena));
-            this.version = version;
             this.elementCount = elementCount;
         }
 
         public bool TryGetValue(out T* ptr) {
             ptr = Value;
             return ptr != null;
-        }
-
-        public SlimUnsafeRef<T> ToSlim() {
-            return new SlimUnsafeRef<T>(pointer, version);
         }
 
         public void CopyTo(T[] dest) {
@@ -52,6 +46,8 @@ namespace Arenas {
             if (sourceIndex < 0 || sourceIndex + count > elementCount) {
                 throw new ArgumentOutOfRangeException(nameof(sourceIndex));
             }
+
+            var pointer = (T*)Reference.RawUnsafePointer;
             for (int i = 0; i < count; i++) {
                 dest[destIndex + i] = pointer[sourceIndex + i];
             }
@@ -75,24 +71,51 @@ namespace Arenas {
             return ptr == null ? string.Empty : (*ptr).ToString();
         }
 
+        #region Equality
+        public override bool Equals(object obj) {
+            return obj is UnmanagedRef<T> @ref &&
+                   Reference.Equals(@ref.Reference);
+        }
+
+        public bool Equals(UnmanagedRef<T> other) {
+            return Reference.Equals(other.Reference);
+        }
+
+        public bool Equals(UnsafeRef other) {
+            return Reference.Equals(other);
+        }
+
+        public override int GetHashCode() {
+            return Reference.GetHashCode();
+        }
+
+        public static bool operator ==(UnmanagedRef<T> left, UnmanagedRef<T> right) {
+            return left.Equals(right);
+        }
+
+        public static bool operator !=(UnmanagedRef<T> left, UnmanagedRef<T> right) {
+            return !(left == right);
+        }
+        #endregion
+
         public static explicit operator IntPtr(UnmanagedRef<T> uref) {
-            return (IntPtr)uref.pointer;
+            return uref.Reference.RawUnsafePointer;
         }
 
         public static explicit operator UnmanagedRef(UnmanagedRef<T> uref) {
-            return new UnmanagedRef(typeof(T), (IntPtr)uref.pointer, uref.arena, uref.version, uref.elementCount);
+            return new UnmanagedRef(typeof(T), uref.Reference.RawUnsafePointer, uref.arena, uref.Reference.Version, uref.elementCount);
         }
 
         public static explicit operator UnmanagedRef<T>(UnmanagedRef uref) {
             return new UnmanagedRef<T>((T*)(IntPtr)uref, uref.Arena, uref.Version, uref.ElementCount);
         }
 
-        public static explicit operator SlimUnsafeRef<T>(UnmanagedRef<T> uref) {
-            return new SlimUnsafeRef<T>(uref.pointer, uref.version);
+        public static explicit operator UnsafeRef<T>(UnmanagedRef<T> uref) {
+            return new UnsafeRef<T>(uref.Reference);
         }
 
-        public static explicit operator SlimUnsafeRef(UnmanagedRef<T> uref) {
-            return new SlimUnsafeRef((IntPtr)uref.pointer, uref.version);
+        public static explicit operator UnsafeRef(UnmanagedRef<T> uref) {
+            return uref.Reference;
         }
 
         public T* this[int index] {
@@ -105,37 +128,32 @@ namespace Arenas {
         }
 
         public Arena Arena { get { return arena; } }
-        public T* Value { get { return pointer != null && !arena.VersionsMatch(version, (IntPtr)pointer) ? null : pointer; } }
-        public bool HasValue { get { return pointer != null && arena.VersionsMatch(version, (IntPtr)pointer); } }
-        public RefVersion Version { get { return version; } }
+        public T* Value { get { return Reference.RawUnsafePointer != null && !arena.VersionsMatch(Reference.Version, Reference.RawUnsafePointer) ? null : (T*)Reference.RawUnsafePointer; } }
+        public bool HasValue { get { return Reference.RawUnsafePointer != null && arena.VersionsMatch(Reference.Version, Reference.RawUnsafePointer); } }
+        public RefVersion Version { get { return Reference.Version; } }
         public int ElementCount { get { return elementCount; } }
         public int Size { get { return elementCount * sizeof(T); } }
+        UnsafeRef IUnmanagedRef.Reference { get { return Reference; } }
     }
 
     [DebuggerTypeProxy(typeof(UnmanagedRefDebugView))]
     [DebuggerDisplay("{HasValue ? ToString() : null}")]
-    unsafe readonly public struct UnmanagedRef {
+    unsafe readonly public struct UnmanagedRef : IUnmanagedRef, IEquatable<UnmanagedRef> {
         private readonly Type type;
-        private readonly IntPtr pointer;
-        private readonly RefVersion version;
+        public readonly UnsafeRef Reference;
         private readonly Arena arena;
         private readonly int elementCount;
 
         public UnmanagedRef(Type type, IntPtr pointer, Arena arena, RefVersion version, int elementCount) {
             this.type = type ?? throw new ArgumentNullException(nameof(type));
-            this.pointer = pointer;
+            this.Reference = new UnsafeRef(pointer, version);
             this.arena = arena ?? throw new ArgumentNullException(nameof(arena));
-            this.version = version;
             this.elementCount = elementCount;
         }
 
         public bool TryGetValue(out IntPtr ptr) {
             ptr = Value;
             return ptr != IntPtr.Zero;
-        }
-
-        public SlimUnsafeRef ToSlim() {
-            return new SlimUnsafeRef(pointer, version);
         }
 
         public void CopyTo<T>(T[] dest) {
@@ -160,7 +178,7 @@ namespace Arenas {
                 throw new ArgumentOutOfRangeException(nameof(sourceIndex));
             }
 
-            var cur = pointer;
+            var cur = Reference.RawUnsafePointer;
             var elementSize = Marshal.SizeOf(Type);
 
             for (int i = 0; i < elementCount; i++) {
@@ -193,12 +211,39 @@ namespace Arenas {
             return inst.ToString();
         }
 
-        public static explicit operator IntPtr(UnmanagedRef uref) {
-            return uref.pointer;
+        #region Equality
+        public override bool Equals(object obj) {
+            return obj is UnmanagedRef @ref &&
+                   Reference.Equals(@ref.Reference);
         }
 
-        public static explicit operator SlimUnsafeRef(UnmanagedRef uref) {
-            return new SlimUnsafeRef(uref.pointer, uref.version);
+        public bool Equals(UnmanagedRef other) {
+            return Reference.Equals(other.Reference);
+        }
+
+        public bool Equals(UnsafeRef other) {
+            return Reference.Equals(other);
+        }
+
+        public override int GetHashCode() {
+            return Reference.GetHashCode();
+        }
+
+        public static bool operator ==(UnmanagedRef left, UnmanagedRef right) {
+            return left.Equals(right);
+        }
+
+        public static bool operator !=(UnmanagedRef left, UnmanagedRef right) {
+            return !(left == right);
+        }
+        #endregion
+
+        public static explicit operator IntPtr(UnmanagedRef uref) {
+            return uref.Reference.RawUnsafePointer;
+        }
+
+        public static explicit operator UnsafeRef(UnmanagedRef uref) {
+            return uref.Reference;
         }
 
         public T* As<T>() where T : unmanaged {
@@ -219,10 +264,11 @@ namespace Arenas {
 
         public Type Type { get { return type; } }
         public Arena Arena { get { return arena; } }
-        public IntPtr Value { get { return pointer != IntPtr.Zero && !arena.VersionsMatch(version, pointer) ? IntPtr.Zero : pointer; } }
-        public bool HasValue { get { return pointer != IntPtr.Zero && arena.VersionsMatch(version, pointer); } }
-        public RefVersion Version { get { return version; } }
+        public IntPtr Value { get { return Reference.RawUnsafePointer != IntPtr.Zero && !arena.VersionsMatch(Reference.Version, Reference.RawUnsafePointer) ? IntPtr.Zero : Reference.RawUnsafePointer; } }
+        public bool HasValue { get { return Reference.RawUnsafePointer != IntPtr.Zero && arena.VersionsMatch(Reference.Version, Reference.RawUnsafePointer); } }
+        public RefVersion Version { get { return Reference.Version; } }
         public int ElementCount { get { return elementCount; } }
         public int Size { get { return elementCount * Marshal.SizeOf(type); } }
+        UnsafeRef IUnmanagedRef.Reference { get { return Reference; } }
     }
 }

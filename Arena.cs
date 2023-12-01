@@ -191,7 +191,7 @@ namespace Arenas {
             return ptr;
         }
 
-        public void Free<T>(in SlimUnsafeRef<T> items) where T : unmanaged {
+        public void Free<T>(in UnsafeRef<T> items) where T : unmanaged {
             Free(items.ToUnmanaged());
         }
 
@@ -214,7 +214,7 @@ namespace Arenas {
             _FreeValues((IntPtr)items.Value);
         }
 
-        public void Free(in SlimUnsafeRef items) {
+        public void Free(in UnsafeRef items) {
             Free(items.ToUnmanaged());
         }
 
