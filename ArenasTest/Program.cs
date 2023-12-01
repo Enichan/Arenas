@@ -86,7 +86,7 @@ namespace ArenasTest {
         static unsafe void UnmanagedPtrList() {
             using (var arena = new Arena()) {
                 // allocate a list
-                var people = new ArenaList<SlimUnsafeRef>(arena);
+                var people = new ArenaList<UnsafeRef>(arena);
 
                 // allocate some people references
                 var john = arena.Allocate(new Person());

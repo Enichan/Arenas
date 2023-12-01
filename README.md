@@ -20,8 +20,8 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 - Copy `UnmanagedRef` types to arrays via `ToArray` and `CopyTo`
 - Generic `ArenaList<T>` type for storing lists inside an arena instance
 - Ability to free items via `IntPtr`
-- `SlimUnsafeRef` struct which caches fewer things than `UnmanagedRef` and is much smaller (16 bytes vs 40 bytes for `UnmanagedRef` and 32 bytes for `UnmanagedRef<T>`)
-- `SlimUnsafeRef` struct is blittable and can be stored inside arenas (see samples)
+- `UnsafeRef` struct which caches fewer things than `UnmanagedRef` and is much smaller (16 bytes vs 40 bytes for `UnmanagedRef` and 32 bytes for `UnmanagedRef<T>`)
+- `UnsafeRef` struct is blittable and can be stored inside arenas (see samples)
 
 ## Samples
 
@@ -204,7 +204,7 @@ Store references to items in arena in ArenaList:
 ```csharp
 using (var arena = new Arena()) {
     // allocate a list
-    var people = new ArenaList<SlimUnsafeRef>(arena);
+    var people = new ArenaList<UnsafeRef>(arena);
 
     // allocate some people references
     var john = arena.Allocate(new Person());
