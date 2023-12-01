@@ -42,7 +42,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Type mismatch in header for pointer in UnmanagedRefFromPtr<T>(IntPtr), types do not match or address may be invalid.");
             }
 
-            var version = new RefVersion(header.Version.Item, id);
+            var version = header.Version.SetArenaID(id);
             if (!version.Valid) {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr<T>(IntPtr) did not point to a valid item.");
             }
@@ -62,7 +62,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Invalid type in header for pointer in UnmanagedRefFromPtr(IntPtr), address may be invalid.");
             }
 
-            var version = new RefVersion(header.Version.Item, id);
+            var version = header.Version.SetArenaID(id);
             if (!version.Valid) {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr(IntPtr) did not point to a valid item.");
             }
@@ -102,7 +102,7 @@ namespace Arenas {
 
                 // increment item version by 1 and set header
                 var prevVersion = ItemHeader.GetVersion(ptr);
-                version = new RefVersion(prevVersion.Item.Increment(true), id);
+                version = prevVersion.IncrementItemVersion(true).SetArenaID(id);
                 ItemHeader.SetHeader(ptr, new ItemHeader(GetTypeHandle(type), iSizeBytes, IntPtr.Zero, version)); // set header
             }
             else {
@@ -110,7 +110,7 @@ namespace Arenas {
 
                 // increment item version by 1
                 var prevVersion = ItemHeader.GetVersion(ptr);
-                version = new RefVersion(prevVersion.Item.Increment(true), id);
+                version = prevVersion.IncrementItemVersion(true).SetArenaID(id);
                 ItemHeader.SetVersion(ptr, version);
                 ItemHeader.SetTypeHandle(ptr, GetTypeHandle(type));
             }
@@ -640,7 +640,7 @@ namespace Arenas {
             public TypeHandle TypeHandle;
             public int Size;
             public IntPtr NextFree;
-            public RefVersion Version; // this must be last for ItemHeader.GetArenaID(IntPtr) to work
+            public RefVersion Version; // this must be last for ItemHeader.GetArenaID(IntPtr) and GetVersion(IntPtr) to work
 
             public ItemHeader(TypeHandle typeHandle, int size, IntPtr next, RefVersion version) {
                 TypeHandle = typeHandle;
@@ -661,8 +661,10 @@ namespace Arenas {
             }
 
             public static RefVersion GetVersion(IntPtr item) {
-                var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                return header->Version;
+                if (item == IntPtr.Zero) {
+                    return default(RefVersion).Invalidate();
+                }
+                return *(RefVersion*)(item - sizeof(RefVersion));
             }
 
             public static void SetSize(IntPtr item, int size) {
@@ -710,15 +712,15 @@ namespace Arenas {
 
             public static void Invalidate(IntPtr item) {
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
-                header->Version = new RefVersion(header->Version.Item.Invalidate(), ArenaID.Empty);
+                header->Version = header->Version.Invalidate();
             }
 
             public static ArenaID GetArenaID(IntPtr item) {
                 if (item == IntPtr.Zero) {
                     return ArenaID.Empty;
                 }
-                var id = (ArenaID*)(item - sizeof(ArenaID));
-                return *id;
+                var version = (RefVersion*)(item - sizeof(RefVersion));
+                return version->Arena;
             }
         }
 

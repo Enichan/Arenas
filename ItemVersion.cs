@@ -11,7 +11,7 @@ namespace Arenas {
 
         public ItemVersion(int version, bool valid) {
             Debug.Assert((version & -2147483648) == 0);
-            if (!valid) {
+            if (valid) {
                 version |= -2147483648;
             }
             rawValue = version;
@@ -58,6 +58,6 @@ namespace Arenas {
         }
 
         public int Version { get { return rawValue & 0x7FFFFFFF; } }
-        public bool Valid { get { return (rawValue & -2147483648) == 0; } }
+        public bool Valid { get { return (rawValue & -2147483648) != 0; } }
     }
 }
