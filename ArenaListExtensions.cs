@@ -4,11 +4,12 @@ using System.Text;
 
 namespace Arenas {
     public static class ArenaListExtensions {
-        public static void Add<T>(this ArenaList<UnsafeRef> list, UnmanagedRef<T> uref) where T : unmanaged {
-            list.Add((UnsafeRef)uref);
+        public static void Add<TItem>(this ArenaList<UnsafeRef> list, in TItem uref) where TItem : struct, IUnmanagedRef {
+            list.Add(uref.Reference);
         }
-        public static void Add<T>(this ArenaList<IntPtr> list, UnmanagedRef<T> uref) where T : unmanaged {
-            list.Add((IntPtr)uref);
+
+        public static void Add<T>(this ArenaList<IntPtr> list, in T uref) where T : struct, IUnmanagedRef {
+            list.Add(uref.Reference.RawUnsafePointer);
         }
     }
 }
