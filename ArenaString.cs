@@ -10,7 +10,7 @@ namespace Arenas {
             Debug.Assert(sizeof(int) == sizeof(char) * 2);
         }
 
-        private readonly SlimUnsafeRef<char> contents;
+        private readonly UnsafeRef<char> contents;
 
         public ArenaString(Arena arena, string source) {
             if (arena is null) {
@@ -18,7 +18,7 @@ namespace Arenas {
             }
 
             var capacity = source.Length;
-            contents = arena.AllocCount<char>(capacity + 2).ToSlim();
+            contents = (UnsafeRef<char>)arena.AllocCount<char>(capacity + 2);
             CopyFrom(source);
         }
 
@@ -27,7 +27,7 @@ namespace Arenas {
                 throw new ArgumentNullException(nameof(arena));
             }
 
-            contents = arena.AllocCount<char>(capacity + 2).ToSlim();
+            contents = (UnsafeRef<char>)arena.AllocCount<char>(capacity + 2);
         }
 
         private char* InitCopy(out int capacity) {
