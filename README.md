@@ -22,6 +22,7 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 - Ability to free items via `IntPtr`
 - `UnsafeRef` struct which caches fewer things than `UnmanagedRef` and is much smaller (16 bytes vs 40 bytes for `UnmanagedRef` and 32 bytes for `UnmanagedRef<T>`)
 - `UnsafeRef` struct is blittable and can be stored inside arenas (see samples)
+- `UnsafeRef.Value` functions the same as `UnmanagedRef.Value` and is safe, the unsafe part of the name comes from the fact that it looks up its arena reference and type through pointer manipulation in the heap, but stale reference detection still works as expected
 
 ## Samples
 
