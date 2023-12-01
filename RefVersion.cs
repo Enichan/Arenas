@@ -14,7 +14,7 @@ namespace Arenas {
         [FieldOffset(0)]
         public readonly ItemVersion Item;
         [FieldOffset(sizeof(int))]
-        public readonly ArenaID Arena; // this must be last for ItemHeader.GetArenaID(IntPtr) to work
+        public readonly ArenaID Arena;
 
         public RefVersion(ItemVersion item, ArenaID arena) {
             Value = 0;
@@ -22,6 +22,19 @@ namespace Arenas {
             Arena = arena;
         }
 
+        public RefVersion IncrementItemVersion(bool valid) {
+            return new RefVersion(Item.Increment(valid), Arena);
+        }
+
+        public RefVersion SetArenaID(ArenaID id) {
+            return new RefVersion(Item, id);
+        }
+
+        public RefVersion Invalidate() {
+            return new RefVersion(Item.Invalidate(), ArenaID.Empty);
+        }
+
+        #region Equality
         public override bool Equals(object obj) {
             return obj is RefVersion version && Value == version.Value;
         }
@@ -41,6 +54,7 @@ namespace Arenas {
         public static bool operator !=(RefVersion left, RefVersion right) {
             return !(left == right);
         }
+        #endregion
 
         public override string ToString() {
             return $"RefVersion(Arena={Arena}, Item={Item})";
