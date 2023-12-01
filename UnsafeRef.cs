@@ -33,6 +33,14 @@ namespace Arenas {
             return arena.UnmanagedRefFromPtr((T*)Reference.RawUnsafePointer);
         }
 
+        UnmanagedRef IUnmanagedRef.ToUnmanaged() {
+            var arena = Arena;
+            if (arena is null) {
+                throw new InvalidOperationException($"Cannot convert UnsafeRef<{typeof(T)}> to UnmanagedRef<{typeof(T)}>: not a valid reference (arena was null)");
+            }
+            return arena.UnmanagedRefFromPtr(Reference.RawUnsafePointer);
+        }
+
         public override string ToString() {
             var ptr = Value;
             return ptr == null ? string.Empty : (*ptr).ToString();

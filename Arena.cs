@@ -191,30 +191,12 @@ namespace Arenas {
             return ptr;
         }
 
-        public void Free<T>(in UnsafeRef<T> items) where T : unmanaged {
-            Free(items.ToUnmanaged());
+        public void Free(IntPtr ptr) {
+            var uref = UnmanagedRefFromPtr(ptr);
+            Free(uref);
         }
 
-        public void Free<T>(in UnmanagedRef<T> items) where T : unmanaged {
-            T* cur;
-            if (!items.TryGetValue(out cur)) {
-                // can't free that ya silly bugger
-                return;
-            }
-
-            enumVersion++;
-
-            if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
-                for (int i = 0; i < items.ElementCount; i++, cur++) {
-                    // free contents
-                    ArenaContentsHelper.Free(cur);
-                }
-            }
-
-            _FreeValues((IntPtr)items.Value);
-        }
-
-        public void Free(in UnsafeRef items) {
+        public void Free<T>(in T items) where T : struct, IUnmanagedRef {
             Free(items.ToUnmanaged());
         }
 
@@ -241,9 +223,23 @@ namespace Arenas {
             _FreeValues(items.Value);
         }
 
-        public void Free(IntPtr ptr) {
-            var uref = UnmanagedRefFromPtr(ptr);
-            Free(in uref);
+        public void Free<T>(in UnmanagedRef<T> items) where T : unmanaged {
+            T* cur;
+            if (!items.TryGetValue(out cur)) {
+                // can't free that ya silly bugger
+                return;
+            }
+
+            enumVersion++;
+
+            if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
+                for (int i = 0; i < items.ElementCount; i++, cur++) {
+                    // free contents
+                    ArenaContentsHelper.Free(cur);
+                }
+            }
+
+            _FreeValues((IntPtr)items.Value);
         }
 
         private void _FreeValues(IntPtr itemPtr) {

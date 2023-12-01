@@ -118,6 +118,10 @@ namespace Arenas {
             return uref.Reference;
         }
 
+        UnmanagedRef IUnmanagedRef.ToUnmanaged() {
+            return (UnmanagedRef)this;
+        }
+
         public T* this[int index] {
             get {
                 if (index < 0 || index >= ElementCount) {
@@ -251,6 +255,10 @@ namespace Arenas {
                 return null;
             }
             return (T*)Value;
+        }
+
+        UnmanagedRef IUnmanagedRef.ToUnmanaged() {
+            return this;
         }
 
         public IntPtr this[int index] {
