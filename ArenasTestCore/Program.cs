@@ -52,7 +52,7 @@ namespace ArenasTestCore {
             }
         }
 
-        private static string sourceText = @"Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
+        private static string sourceText = @"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aliquam sodales elit rutrum iaculis dictum.";
 
         [StructLayout(LayoutKind.Sequential)]
         private unsafe struct Word {
