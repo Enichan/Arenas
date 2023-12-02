@@ -799,7 +799,7 @@ namespace Arenas {
             public TypeHandle TypeHandle;
             public int Size;
             public IntPtr NextFree;
-            public RefVersion Version; // this must be last for ItemHeader.GetArenaID(IntPtr) and GetVersion(IntPtr) to work
+            public RefVersion Version;
 
             public ItemHeader(TypeHandle typeHandle, int size, IntPtr next, RefVersion version) {
                 TypeHandle = typeHandle;
@@ -823,7 +823,8 @@ namespace Arenas {
                 if (item == IntPtr.Zero) {
                     return default(RefVersion).Invalidate();
                 }
-                return *(RefVersion*)(item - sizeof(RefVersion));
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                return header->Version;
             }
 
             public static void SetSize(IntPtr item, int size) {
@@ -881,8 +882,8 @@ namespace Arenas {
                 if (item == IntPtr.Zero) {
                     return ArenaID.Empty;
                 }
-                var version = (RefVersion*)(item - sizeof(RefVersion));
-                return version->Arena;
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
+                return header->Version.Arena;
             }
         }
 

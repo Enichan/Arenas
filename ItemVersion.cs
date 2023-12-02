@@ -10,14 +10,14 @@ namespace Arenas {
     // Bit index:  1111111111111111 0000000000000000
     //             FEDCBA9876543210 FEDCBA9876543210
     // 
-    // Bit layout: VIIIIIIIIIIIIIII IIIIIIIIIIIIIIIL
-    //             VEEEEEEEEEEEEEEE IIIIIIIIIIIIIIIS
+    // Bit layout: VEEEEEEEEEEEEEEE IIIIIIIIIIIIIIIS
+    //             VIIIIIIIIIIIIIII IIIIIIIIIIIIIIIL
     //         
     // V = item version valid bit (valid if set)
     // E = element count (0 bits long, 15 bits short)
     // I = item version (30 bits long, 15 bits short)
-    // L = long version (lowest bit set)
     // S = short version (lowest bit unset)
+    // L = long version (lowest bit set)
     [StructLayout(LayoutKind.Sequential)]
     public readonly struct ItemVersion : IEquatable<ItemVersion> {
         private const int validBit = unchecked((int)0x80000000); // -2147483648
