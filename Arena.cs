@@ -41,8 +41,11 @@ namespace Arenas {
             var header = ItemHeader.GetHeader(ptr);
 
             Type type;
-            if (!TryGetTypeFromHandle(header.TypeHandle, out type) || type != typeof(T)) {
-                throw new InvalidOperationException("Type mismatch in header for pointer in UnmanagedRefFromPtr<T>(IntPtr), types do not match or address may be invalid.");
+            if (!TryGetTypeFromHandle(header.TypeHandle, out type)) {
+                throw new InvalidOperationException("Type mismatch in header for pointer in UnmanagedRefFromPtr<T>(IntPtr), address may be invalid.");
+            }
+            if (type != typeof(T)) {
+                throw new InvalidOperationException($"Type mismatch in header for pointer in UnmanagedRefFromPtr<T>(IntPtr), types do not match: type {typeof(T)} expected, but item was of type {type}.");
             }
 
             var version = header.Version.SetArenaID(id);
