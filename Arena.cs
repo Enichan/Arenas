@@ -112,6 +112,7 @@ namespace Arenas {
             Debug.Assert(sizeBytes <= int.MaxValue);
 
             var iSizeBytes = (int)sizeBytes;
+            var elementCount = iSizeBytes / Marshal.SizeOf(type);
 
             // check if there is a freelist for this type and attempt to get an item from it
             Freelist freelist;
@@ -121,7 +122,7 @@ namespace Arenas {
 
                 // increment item version by 1 and set header
                 var prevVersion = ItemHeader.GetVersion(ptr);
-                version = prevVersion.IncrementItemVersion(true).SetArenaID(id);
+                version = prevVersion.IncrementItemVersion(true, elementCount).SetArenaID(id);
                 ItemHeader.SetHeader(ptr, new ItemHeader(GetTypeHandle(type), iSizeBytes, IntPtr.Zero, version)); // set header
             }
             else {
@@ -129,7 +130,7 @@ namespace Arenas {
 
                 // increment item version by 1
                 var prevVersion = ItemHeader.GetVersion(ptr);
-                version = prevVersion.IncrementItemVersion(true).SetArenaID(id);
+                version = prevVersion.IncrementItemVersion(true, elementCount).SetArenaID(id);
                 ItemHeader.SetVersion(ptr, version);
                 ItemHeader.SetTypeHandle(ptr, GetTypeHandle(type));
             }

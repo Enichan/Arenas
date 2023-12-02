@@ -11,11 +11,11 @@ namespace Arenas {
         private readonly ulong value;
 
         public BitpackedPtr(IntPtr ptr, int packedValue) {
-            if (packedValue < 0 || packedValue >= 0b1000) {
+            if (packedValue < 0 || packedValue > LowerMask) {
                 throw new ArgumentOutOfRangeException(nameof(packedValue));
             }
-            Debug.Assert(((ulong)ptr % sizeof(ulong)) == 0);
-            value = (ulong)ptr | (ulong)(uint)packedValue;
+            Debug.Assert(((ulong)ptr & LowerMask) == 0);
+            value = (ulong)ptr | (uint)packedValue;
         }
 
         #region Equality

@@ -53,22 +53,6 @@ namespace Arenas {
         }
         #endregion
 
-        //public UnmanagedRef<T> ToUnmanaged() {
-        //    var arena = Arena;
-        //    if (arena is null) {
-        //        throw new InvalidOperationException($"Cannot convert UnsafeRef<{typeof(T)}> to UnmanagedRef<{typeof(T)}>: not a valid reference (arena was null)");
-        //    }
-        //    return arena.UnmanagedRefFromPtr((T*)Reference.RawUnsafePointer);
-        //}
-
-        //UnmanagedRef IUnmanagedRef.ToUnmanaged() {
-        //    var arena = Arena;
-        //    if (arena is null) {
-        //        throw new InvalidOperationException($"Cannot convert UnsafeRef<{typeof(T)}> to UnmanagedRef<{typeof(T)}>: not a valid reference (arena was null)");
-        //    }
-        //    return arena.UnmanagedRefFromPtr(Reference.RawUnsafePointer);
-        //}
-
         public override string ToString() {
             var elementCount = ElementCount;
             if (elementCount > 1) {
@@ -117,12 +101,28 @@ namespace Arenas {
             return new UnsafeRef<T>(uref);
         }
 
+        public int ElementCount { 
+            get {
+                if (!HasValue) {
+                    return 0;
+                }
+
+                var packedValue = Reference.PointerPackedValue;
+                if (packedValue == 0) {
+                    if (Reference.Version.Item.HasElementCount) {
+                        return Reference.Version.Item.ElementCount;
+                    }
+                    return Size / sizeof(T);
+                }
+                return packedValue;
+            }
+        }
+
         public T* this[int index] { get { return (T*)Reference[index]; } }
         public Arena Arena { get { return Reference.Arena; } }
         public T* Value { get { return (T*)Reference.Value; } }
         public bool HasValue { get { return Reference.HasValue; } }
         public RefVersion Version { get { return Reference.Version; } }
-        public int ElementCount { get { return Reference.Size / sizeof(T); } }
         public int Size { get { return Reference.Size; } }
         UnsafeRef IUnmanagedRef.Reference { get { return Reference; } }
     }
@@ -135,7 +135,12 @@ namespace Arenas {
         private readonly RefVersion version;
 
         public UnsafeRef(IntPtr pointer, RefVersion version, int elementCount) {
-            this.pointer = new BitpackedPtr(pointer, 0);
+            if (elementCount > 0 && elementCount <= BitpackedPtr.LowerMask) {
+                this.pointer = new BitpackedPtr(pointer, elementCount);
+            }
+            else {
+                this.pointer = new BitpackedPtr(pointer, 0);
+            }
             this.version = version;
         }
 
@@ -199,22 +204,6 @@ namespace Arenas {
             return items;
         }
         #endregion
-
-        //public UnmanagedRef ToUnmanaged() {
-        //    var arena = Arena;
-        //    if (arena is null) {
-        //        throw new InvalidOperationException($"Cannot convert UnsafeRef to UnmanagedRef: not a valid reference (arena was null)");
-        //    }
-        //    return arena.UnmanagedRefFromPtr(pointer);
-        //}
-
-        //public UnmanagedRef<T> ToUnmanaged<T>() where T : unmanaged {
-        //    var arena = Arena;
-        //    if (arena is null) {
-        //        throw new InvalidOperationException($"Cannot convert UnsafeRef to UnmanagedRef<{typeof(T)}>: not a valid reference (arena was null)");
-        //    }
-        //    return arena.UnmanagedRefFromPtr<T>(pointer);
-        //}
 
         public override string ToString() {
             var elementCount = ElementCount;
@@ -282,6 +271,9 @@ namespace Arenas {
 
         public Type Type { 
             get {
+                if (!HasValue) {
+                    return null;
+                }
                 Type type;
                 if (!Arena.TryGetTypeFromHandle(Arena.ItemHeader.GetTypeHandle(pointer.Value), out type)) {
                     return null;
@@ -320,20 +312,33 @@ namespace Arenas {
 
         public int ElementCount {
             get {
-                return Size / Marshal.SizeOf(Type);
+                if (!HasValue) {
+                    return 0;
+                }
+
+                var packedValue = PointerPackedValue;
+                if (packedValue == 0) {
+                    if (version.Item.HasElementCount) {
+                        return version.Item.ElementCount;
+                    }
+                    return Size / Marshal.SizeOf(Type);
+                }
+                return packedValue;
             }
         }
 
         public int Size {
             get {
+                var ptr = pointer.Value;
                 var arena = Arena;
-                if (arena is null) {
+                if (arena is null || !arena.VersionsMatch(version, ptr)) {
                     return 0;
                 }
-                return Arena.ItemHeader.GetSize(pointer.Value);
+                return Arena.ItemHeader.GetSize(ptr);
             }
         }
 
+        internal int PointerPackedValue { get { return pointer.PackedValue; } }
         public RefVersion Version { get { return version; } }
         public IntPtr RawUnsafePointer { get { return pointer.Value; } }
         UnsafeRef IUnmanagedRef.Reference { get { return this; } }

@@ -6,6 +6,24 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Arenas {
+    // Versions contain information about the arena ID, item version number, and optional
+    // element count. This allows UnsafeRef to store the element count for items with low
+    // version numbers (up to 32767) to store element counts up to 32767. The valid bit
+    // indicates that an item is allocated in the arena if set, and indicates free space
+    // if unset.
+    // 
+    // Bit index:  3333333333333333 2222222222222222 1111111111111111 0000000000000000
+    //             FEDCBA9876543210 FEDCBA9876543210 FEDCBA9876543210 FEDCBA9876543210
+    // 
+    // Bit layout: AAAAAAAAAAAAAAAA AAAAAAAAAAAAAAAA VIIIIIIIIIIIIIII IIIIIIIIIIIIIIIL
+    //             AAAAAAAAAAAAAAAA AAAAAAAAAAAAAAAA VEEEEEEEEEEEEEEE IIIIIIIIIIIIIIIS
+    //         
+    // A = arena ID (32 bits)
+    // V = item version valid bit (valid if set)
+    // E = element count (0 bits long, 15 bits short)
+    // I = item version (30 bits long, 15 bits short)
+    // L = long version (lowest bit set)
+    // S = short version (lowest bit unset)
     [StructLayout(LayoutKind.Explicit)]
     public readonly struct RefVersion : IEquatable<RefVersion> {
         [FieldOffset(0)]
@@ -22,8 +40,8 @@ namespace Arenas {
             Arena = arena;
         }
 
-        public RefVersion IncrementItemVersion(bool valid) {
-            return new RefVersion(Item.Increment(valid), Arena);
+        public RefVersion IncrementItemVersion(bool valid, int elementCount) {
+            return new RefVersion(Item.Increment(valid, elementCount), Arena);
         }
 
         public RefVersion SetArenaID(ArenaID id) {
