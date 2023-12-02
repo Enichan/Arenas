@@ -101,6 +101,15 @@ namespace Arenas {
             return new UnmanagedRef<T>(uref);
         }
 
+        public T* this[int index] {
+            get {
+                if (index < 0 || index >= ElementCount) {
+                    throw new ArgumentOutOfRangeException(nameof(index));
+                }
+                return Value + index;
+            }
+        }
+
         public int ElementCount { 
             get {
                 if (!HasValue) {
@@ -118,7 +127,6 @@ namespace Arenas {
             }
         }
 
-        public T* this[int index] { get { return (T*)Reference[index]; } }
         public Arena Arena { get { return Reference.Arena; } }
         public T* Value { get { return (T*)Reference.Value; } }
         public bool HasValue { get { return Reference.HasValue; } }
