@@ -1,23 +1,23 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace Arenas {
     [DebuggerTypeProxy(typeof(UnmanagedRefDebugView<>))]
     [DebuggerDisplay("{HasValue ? ToString() : null}")]
+    [StructLayout(LayoutKind.Sequential)]
     unsafe readonly public struct UnmanagedRef<T> : IUnmanagedRef, IEquatable<UnmanagedRef<T>> where T : unmanaged {
-        public readonly UnsafeRef Reference;
-        private readonly Arena arena;
-        private readonly int elementCount;
+        public readonly UnmanagedRef Reference;
 
-        public UnmanagedRef(T* pointer, Arena arena, RefVersion version, int elementCount) {
-            this.Reference = new UnsafeRef((IntPtr)pointer, version);
-            this.arena = arena ?? throw new ArgumentNullException(nameof(arena));
-            this.elementCount = elementCount;
+        public UnmanagedRef(UnmanagedRef reference) {
+            Reference = reference;
+        }
+
+        public UnmanagedRef(T* pointer, RefVersion version, int elementCount) {
+            Reference = new UnmanagedRef((IntPtr)pointer, version, elementCount);
         }
 
         public bool TryGetValue(out T* ptr) {
@@ -25,45 +25,36 @@ namespace Arenas {
             return ptr != null;
         }
 
+        #region Copying
         public void CopyTo(T[] dest) {
-            CopyTo(dest, 0, 0, elementCount);
+            var elementCount = ElementCount;
+            Reference.CopyTo(dest, 0, 0, elementCount, elementCount, typeof(T));
         }
 
         public void CopyTo(T[] dest, int destIndex) {
-            CopyTo(dest, destIndex, 0, elementCount);
+            var elementCount = ElementCount;
+            Reference.CopyTo(dest, destIndex, 0, elementCount, elementCount, typeof(T));
         }
 
         public void CopyTo(T[] dest, int destIndex, int sourceIndex, int count) {
-            if (dest is null) {
-                throw new ArgumentNullException(nameof(dest));
-            }
-            if (!HasValue) {
-                throw new NullReferenceException($"Error in UnmanagedRef<{GetType().GenericTypeArguments[0].Name}>.CopyTo: HasValue was false");
-            }
-            if (destIndex < 0 || destIndex + count > dest.Length) {
-                throw new ArgumentOutOfRangeException(nameof(destIndex));
-            }
-            if (sourceIndex < 0 || sourceIndex + count > elementCount) {
-                throw new ArgumentOutOfRangeException(nameof(sourceIndex));
-            }
-
-            var pointer = (T*)Reference.RawUnsafePointer;
-            for (int i = 0; i < count; i++) {
-                dest[destIndex + i] = pointer[sourceIndex + i];
-            }
+            var elementCount = ElementCount;
+            Reference.CopyTo(dest, destIndex, sourceIndex, count, elementCount, typeof(T));
         }
 
         public T[] ToArray() {
             if (!HasValue) {
-                throw new NullReferenceException($"Error in UnmanagedRef<{GetType().GenericTypeArguments[0].Name}>.ToArray: HasValue was false");
+                throw new NullReferenceException($"Error in UnmanagedRef<{typeof(T)}>.ToArray: HasValue was false");
             }
 
+            var elementCount = ElementCount;
             var items = new T[elementCount];
-            CopyTo(items, 0, 0, elementCount);
+            Reference.CopyTo(items, 0, 0, elementCount, elementCount, typeof(T));
             return items;
         }
+        #endregion
 
         public override string ToString() {
+            var elementCount = ElementCount;
             if (elementCount > 1) {
                 return $"UnmanagedRef<{GetType().GenericTypeArguments[0].Name}>(ElementCount={elementCount})";
             }
@@ -81,12 +72,12 @@ namespace Arenas {
             return Reference.Equals(other.Reference);
         }
 
-        public bool Equals(UnsafeRef other) {
-            return Reference.Equals(other);
-        }
-
         public override int GetHashCode() {
             return Reference.GetHashCode();
+        }
+
+        public bool Equals(UnmanagedRef other) {
+            return Reference.Equals(other);
         }
 
         public static bool operator ==(UnmanagedRef<T> left, UnmanagedRef<T> right) {
@@ -103,56 +94,54 @@ namespace Arenas {
         }
 
         public static explicit operator UnmanagedRef(UnmanagedRef<T> uref) {
-            return new UnmanagedRef(typeof(T), uref.Reference.RawUnsafePointer, uref.arena, uref.Reference.Version, uref.elementCount);
-        }
-
-        public static explicit operator UnmanagedRef<T>(UnmanagedRef uref) {
-            return new UnmanagedRef<T>((T*)(IntPtr)uref, uref.Arena, uref.Version, uref.ElementCount);
-        }
-
-        public static explicit operator UnsafeRef<T>(UnmanagedRef<T> uref) {
-            return new UnsafeRef<T>(uref.Reference);
-        }
-
-        public static explicit operator UnsafeRef(UnmanagedRef<T> uref) {
             return uref.Reference;
         }
 
-        UnmanagedRef IUnmanagedRef.ToUnmanaged() {
-            return (UnmanagedRef)this;
+        public static explicit operator UnmanagedRef<T>(UnmanagedRef uref) {
+            return new UnmanagedRef<T>(uref);
         }
 
-        public T* this[int index] {
+        public int ElementCount { 
             get {
-                if (index < 0 || index >= ElementCount) {
-                    throw new IndexOutOfRangeException();
+                if (!HasValue) {
+                    return 0;
                 }
-                return Value + index;
+
+                var packedValue = Reference.PointerPackedValue;
+                if (packedValue == 0) {
+                    if (Reference.Version.Item.HasElementCount) {
+                        return Reference.Version.Item.ElementCount;
+                    }
+                    return Size / sizeof(T);
+                }
+                return packedValue;
             }
         }
 
-        public Arena Arena { get { return arena; } }
-        public T* Value { get { return Reference.RawUnsafePointer != null && !arena.VersionsMatch(Reference.Version, Reference.RawUnsafePointer) ? null : (T*)Reference.RawUnsafePointer; } }
-        public bool HasValue { get { return Reference.RawUnsafePointer != null && arena.VersionsMatch(Reference.Version, Reference.RawUnsafePointer); } }
+        public T* this[int index] { get { return (T*)Reference[index]; } }
+        public Arena Arena { get { return Reference.Arena; } }
+        public T* Value { get { return (T*)Reference.Value; } }
+        public bool HasValue { get { return Reference.HasValue; } }
         public RefVersion Version { get { return Reference.Version; } }
-        public int ElementCount { get { return elementCount; } }
-        public int Size { get { return elementCount * sizeof(T); } }
-        UnsafeRef IUnmanagedRef.Reference { get { return Reference; } }
+        public int Size { get { return Reference.Size; } }
+        UnmanagedRef IUnmanagedRef.Reference { get { return Reference; } }
     }
 
     [DebuggerTypeProxy(typeof(UnmanagedRefDebugView))]
     [DebuggerDisplay("{HasValue ? ToString() : null}")]
+    [StructLayout(LayoutKind.Sequential)]
     unsafe readonly public struct UnmanagedRef : IUnmanagedRef, IEquatable<UnmanagedRef> {
-        private readonly Type type;
-        public readonly UnsafeRef Reference;
-        private readonly Arena arena;
-        private readonly int elementCount;
+        private readonly BitpackedPtr pointer;
+        private readonly RefVersion version;
 
-        public UnmanagedRef(Type type, IntPtr pointer, Arena arena, RefVersion version, int elementCount) {
-            this.type = type ?? throw new ArgumentNullException(nameof(type));
-            this.Reference = new UnsafeRef(pointer, version);
-            this.arena = arena ?? throw new ArgumentNullException(nameof(arena));
-            this.elementCount = elementCount;
+        public UnmanagedRef(IntPtr pointer, RefVersion version, int elementCount) {
+            if (elementCount > 0 && elementCount <= BitpackedPtr.LowerMask) {
+                this.pointer = new BitpackedPtr(pointer, elementCount);
+            }
+            else {
+                this.pointer = new BitpackedPtr(pointer, 0);
+            }
+            this.version = version;
         }
 
         public bool TryGetValue(out IntPtr ptr) {
@@ -160,33 +149,50 @@ namespace Arenas {
             return ptr != IntPtr.Zero;
         }
 
+        #region Copying
         public void CopyTo<T>(T[] dest) {
-            CopyTo(dest, 0, 0, elementCount);
+            var elementCount = ElementCount;
+            CopyTo(dest, 0, 0, elementCount, elementCount);
         }
 
         public void CopyTo<T>(T[] dest, int destIndex) {
-            CopyTo(dest, destIndex, 0, elementCount);
+            var elementCount = ElementCount;
+            CopyTo(dest, destIndex, 0, elementCount, elementCount);
         }
 
         public void CopyTo<T>(T[] dest, int destIndex, int sourceIndex, int count) {
+            CopyTo(dest, destIndex, sourceIndex, count, -1);
+        }
+
+        internal void CopyTo<T>(T[] dest, int destIndex, int sourceIndex, int count, int elementCount, Type type = null) {
             if (dest is null) {
                 throw new ArgumentNullException(nameof(dest));
             }
             if (!HasValue) {
                 throw new NullReferenceException($"Error in UnmanagedRef.CopyTo: HasValue was false");
             }
+            if (count < 0) {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
             if (destIndex < 0 || destIndex + count > dest.Length) {
                 throw new ArgumentOutOfRangeException(nameof(destIndex));
             }
+
+            if (elementCount < 0) {
+                elementCount = ElementCount;
+            }
+
             if (sourceIndex < 0 || sourceIndex + count > elementCount) {
                 throw new ArgumentOutOfRangeException(nameof(sourceIndex));
             }
 
-            var cur = Reference.RawUnsafePointer;
-            var elementSize = Marshal.SizeOf(Type);
+            type = type ?? Type;
 
-            for (int i = 0; i < elementCount; i++) {
-                dest[i] = (T)Marshal.PtrToStructure(cur, Type);
+            var elementSize = Marshal.SizeOf(type);
+            var cur = RawUnsafePointer + elementSize * sourceIndex;
+
+            for (int i = 0; i < count; i++) {
+                dest[destIndex + i] = (T)Marshal.PtrToStructure(cur, type);
                 cur += elementSize;
             }
         }
@@ -196,12 +202,15 @@ namespace Arenas {
                 throw new NullReferenceException($"Error in UnmanagedRef.ToArray: HasValue was false");
             }
 
+            var elementCount = ElementCount;
             var items = new T[elementCount];
-            CopyTo(items, 0, 0, elementCount);
+            CopyTo(items, 0, 0, elementCount, elementCount);
             return items;
         }
+        #endregion
 
         public override string ToString() {
+            var elementCount = ElementCount;
             if (elementCount > 1) {
                 return $"UnmanagedRef(Type={Type}, ElementCount={elementCount})";
             }
@@ -215,22 +224,35 @@ namespace Arenas {
             return inst.ToString();
         }
 
+        public static explicit operator IntPtr(UnmanagedRef uref) {
+            return uref.pointer.Value;
+        }
+
+        public T* As<T>() where T : unmanaged {
+            if (Type != typeof(T)) {
+                return null;
+            }
+            return (T*)Value;
+        }
+
         #region Equality
         public override bool Equals(object obj) {
             return obj is UnmanagedRef @ref &&
-                   Reference.Equals(@ref.Reference);
+                EqualityComparer<BitpackedPtr>.Default.Equals(pointer, @ref.pointer) &&
+                version.Equals(@ref.version);
         }
 
         public bool Equals(UnmanagedRef other) {
-            return Reference.Equals(other.Reference);
-        }
-
-        public bool Equals(UnsafeRef other) {
-            return Reference.Equals(other);
+            return
+                EqualityComparer<BitpackedPtr>.Default.Equals(pointer, other.pointer) &&
+                version.Equals(other.version);
         }
 
         public override int GetHashCode() {
-            return Reference.GetHashCode();
+            int hashCode = 598475582;
+            hashCode = hashCode * -1521134295 + pointer.GetHashCode();
+            hashCode = hashCode * -1521134295 + version.GetHashCode();
+            return hashCode;
         }
 
         public static bool operator ==(UnmanagedRef left, UnmanagedRef right) {
@@ -242,41 +264,87 @@ namespace Arenas {
         }
         #endregion
 
-        public static explicit operator IntPtr(UnmanagedRef uref) {
-            return uref.Reference.RawUnsafePointer;
-        }
-
-        public static explicit operator UnsafeRef(UnmanagedRef uref) {
-            return uref.Reference;
-        }
-
-        public T* As<T>() where T : unmanaged {
-            if (Type != typeof(T)) {
-                return null;
-            }
-            return (T*)Value;
-        }
-
-        UnmanagedRef IUnmanagedRef.ToUnmanaged() {
-            return this;
-        }
-
         public IntPtr this[int index] {
             get {
                 if (index < 0 || index >= ElementCount) {
-                    throw new IndexOutOfRangeException();
+                    throw new ArgumentOutOfRangeException(nameof(index));
                 }
                 return Value + index;
             }
         }
 
-        public Type Type { get { return type; } }
-        public Arena Arena { get { return arena; } }
-        public IntPtr Value { get { return Reference.RawUnsafePointer != IntPtr.Zero && !arena.VersionsMatch(Reference.Version, Reference.RawUnsafePointer) ? IntPtr.Zero : Reference.RawUnsafePointer; } }
-        public bool HasValue { get { return Reference.RawUnsafePointer != IntPtr.Zero && arena.VersionsMatch(Reference.Version, Reference.RawUnsafePointer); } }
-        public RefVersion Version { get { return Reference.Version; } }
-        public int ElementCount { get { return elementCount; } }
-        public int Size { get { return elementCount * Marshal.SizeOf(type); } }
-        UnsafeRef IUnmanagedRef.Reference { get { return Reference; } }
+        public Type Type { 
+            get {
+                if (!HasValue) {
+                    return null;
+                }
+                Type type;
+                if (!Arena.TryGetTypeFromHandle(Arena.ItemHeader.GetTypeHandle(pointer.Value), out type)) {
+                    return null;
+                }
+                return type; 
+            } 
+        }
+
+        public Arena Arena { 
+            get {
+                return Arena.Get(version.Arena);
+            } 
+        }
+
+        public IntPtr Value { 
+            get {
+                var arena = Arena;
+                if (arena is null) {
+                    return IntPtr.Zero;
+                }
+                var ptr = pointer.Value;
+                return ptr != IntPtr.Zero && !arena.VersionsMatch(version, ptr) ? IntPtr.Zero : ptr; 
+            } 
+        }
+
+        public bool HasValue { 
+            get {
+                var arena = Arena;
+                if (arena is null) {
+                    return false;
+                }
+                var ptr = pointer.Value;
+                return ptr != IntPtr.Zero && arena.VersionsMatch(version, ptr); 
+            } 
+        }
+
+        public int ElementCount {
+            get {
+                if (!HasValue) {
+                    return 0;
+                }
+
+                var packedValue = PointerPackedValue;
+                if (packedValue == 0) {
+                    if (version.Item.HasElementCount) {
+                        return version.Item.ElementCount;
+                    }
+                    return Size / Marshal.SizeOf(Type);
+                }
+                return packedValue;
+            }
+        }
+
+        public int Size {
+            get {
+                var ptr = pointer.Value;
+                var arena = Arena;
+                if (arena is null || !arena.VersionsMatch(version, ptr)) {
+                    return 0;
+                }
+                return Arena.ItemHeader.GetSize(ptr);
+            }
+        }
+
+        internal int PointerPackedValue { get { return pointer.PackedValue; } }
+        public RefVersion Version { get { return version; } }
+        public IntPtr RawUnsafePointer { get { return pointer.Value; } }
+        UnmanagedRef IUnmanagedRef.Reference { get { return this; } }
     }
 }

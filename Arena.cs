@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Arenas {
+    // NOTE: all items allocated to the arena will be aligned to a 64-bit word boundary and their size will be a multiple of 64-bits
     unsafe public class Arena : IDisposable, IEnumerable<UnmanagedRef> {
         public const int PageSize = 4096;
 
@@ -49,7 +50,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr<T>(IntPtr) did not point to a valid item.");
             }
 
-            return new UnmanagedRef<T>((T*)ptr, this, version, header.Size / sizeof(T));
+            return new UnmanagedRef<T>((T*)ptr, version, header.Size / sizeof(T));
         }
 
         public UnmanagedRef UnmanagedRefFromPtr(IntPtr ptr) {
@@ -69,42 +70,59 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr(IntPtr) did not point to a valid item.");
             }
 
-            return new UnmanagedRef(type, ptr, this, version, header.Size / Marshal.SizeOf(type));
+            return new UnmanagedRef(ptr, version, header.Size / Marshal.SizeOf(type));
         }
 
         private Page AllocPage(int size) {
-            Debug.Assert(size == Page.AlignCeil(size, PageSize), "Non page-aligned size in AllocPage");
+            // add one 64-bit word in size to make sure this can always be 64-bit aligned
+            // while keeping the original size (unused space is available if already aligned)
+            size += sizeof(ulong);
+            size = Page.AlignCeil(size, PageSize);
             
+            // allocate pointer, potentially unaligned to 64-bit word
             var mem = Marshal.AllocHGlobal(size);
             ZeroMemory(mem, (UIntPtr)size);
 
-            var page = new Page(mem, size);
-            pages.Add(new Page(mem, size));
+            // store the original pointer for freeing, and find 64-bit word align position
+            var freePtr = mem;
+            var aligned = Page.AlignCeil(mem, sizeof(ulong));
+
+            // page memory must be 64-bit word aligned to keep 64-bit word alignment for all items
+            // allocated to the arena
+            if (mem != aligned) {
+                // memory is misaligned, realign and reduce size accordingly
+                var sizeDifference = (int)((ulong)aligned - (ulong)mem);
+                mem = aligned;
+                size -= sizeDifference;
+            }
+
+            // create page
+            var page = new Page(freePtr, mem, size);
+            pages.Add(page);
+
+            Debug.Assert(((ulong)page.Address % sizeof(ulong)) == 0);
             return page;
         }
 
         private IntPtr Allocate(Type type, ulong sizeBytes, out RefVersion version) {
             IntPtr ptr;
 
-            // make sure size in bytes is at least one word and doesn't overflow
-            if (sizeBytes < sizeof(ulong)) {
-                sizeBytes = sizeof(ulong);
-            }
-            if (sizeBytes > int.MaxValue) {
-                throw new InvalidOperationException("Arena can't allocate size that large");
-            }
+            Debug.Assert(sizeBytes >= sizeof(ulong));
+            Debug.Assert((sizeBytes % sizeof(ulong)) == 0);
+            Debug.Assert(sizeBytes <= int.MaxValue);
 
             var iSizeBytes = (int)sizeBytes;
+            var elementCount = iSizeBytes / Marshal.SizeOf(type);
 
             // check if there is a freelist for this type and attempt to get an item from it
             Freelist freelist;
             if (!freelists.TryGetValue(iSizeBytes, out freelist) || (ptr = freelist.Pop()) == IntPtr.Zero) {
                 // failed to get an item from freelist so push a new item onto the arena
-                ptr = Push(iSizeBytes + sizeof(ItemHeader)) + sizeof(ItemHeader);
+                ptr = Push(iSizeBytes + itemHeaderSize) + itemHeaderSize;
 
                 // increment item version by 1 and set header
                 var prevVersion = ItemHeader.GetVersion(ptr);
-                version = prevVersion.IncrementItemVersion(true).SetArenaID(id);
+                version = prevVersion.IncrementItemVersion(true, elementCount).SetArenaID(id);
                 ItemHeader.SetHeader(ptr, new ItemHeader(GetTypeHandle(type), iSizeBytes, IntPtr.Zero, version)); // set header
             }
             else {
@@ -112,7 +130,7 @@ namespace Arenas {
 
                 // increment item version by 1
                 var prevVersion = ItemHeader.GetVersion(ptr);
-                version = prevVersion.IncrementItemVersion(true).SetArenaID(id);
+                version = prevVersion.IncrementItemVersion(true, elementCount).SetArenaID(id);
                 ItemHeader.SetVersion(ptr, version);
                 ItemHeader.SetTypeHandle(ptr, GetTypeHandle(type));
             }
@@ -159,30 +177,51 @@ namespace Arenas {
             int elementSize = sizeof(T);
 
             ulong sizeBytes = (uint)elementSize * (uint)count;
+
+            // make sure size in bytes is at least one 64-bit word, is 64-bit word
+            // aligned, is a power of 2 for multiple elements and doesn't overflow
+            // item size must be 64-bit word aligned to keep 64-bit word alignment
+            // for all items allocated to the arena
+            if (sizeBytes < sizeof(ulong)) {
+                sizeBytes = sizeof(ulong);
+            }
+
+            sizeBytes = Page.AlignCeil(sizeBytes, sizeof(ulong));
+
             if (count > 1) {
                 sizeBytes = NextPowerOfTwo(sizeBytes);
             }
+
+            if (sizeBytes > int.MaxValue - sizeof(ulong)) {
+                throw new InvalidOperationException("Arena can't allocate size that large");
+            }
+
+            Debug.Assert((sizeBytes % sizeof(ulong)) == 0);
 
             // allocate items and zero memory
             RefVersion version;
             var ptr = Allocate(type, sizeBytes, out version);
             ZeroMemory(ptr, (UIntPtr)sizeBytes);
 
+            Debug.Assert(((ulong)ptr % sizeof(ulong)) == 0);
+
             // get actual allocated item count (can be bigger than requested)
             count = (int)sizeBytes / sizeof(T);
 
             // return pointer as an UnmanagedRef
-            return new UnmanagedRef<T>((T*)ptr, this, version, count);
+            return new UnmanagedRef<T>((T*)ptr, version, count);
         }
 
         private IntPtr Push(int size) {
             IntPtr ptr;
             var page = pages.Last();
 
+            Debug.Assert((size % sizeof(ulong)) == 0);
+
             // try to claim size bytes in current page, will return null if out of space
             if ((ptr = page.Push(size)) == IntPtr.Zero) {
                 // out of space, allocate new page, rounding size up to nearest multiple of PageSize
-                page = AllocPage(Page.AlignCeil(size, PageSize));
+                page = AllocPage(size);
 
                 // claim size bytes in current page
                 // this will always work because we just made sure the new page fits the requested size
@@ -190,6 +229,8 @@ namespace Arenas {
             }
 
             pages.SetLast(page);
+
+            Debug.Assert(((ulong)ptr % sizeof(ulong)) == 0);
             return ptr;
         }
 
@@ -199,7 +240,7 @@ namespace Arenas {
         }
 
         public void Free<T>(in T items) where T : struct, IUnmanagedRef {
-            Free(items.ToUnmanaged());
+            Free(items.Reference);
         }
 
         public void Free(in UnmanagedRef items) {
@@ -211,10 +252,11 @@ namespace Arenas {
 
             enumVersion++;
 
-            var free = ArenaContentsHelper.GetFreeDelegate(items.Type);
-            var elementSize = Marshal.SizeOf(items.Type);
+            var type = items.Type;
+            var free = ArenaContentsHelper.GetFreeDelegate(type);
+            var elementSize = Marshal.SizeOf(type);
 
-            if (typeof(IArenaContents).IsAssignableFrom(items.Type)) {
+            if (typeof(IArenaContents).IsAssignableFrom(type)) {
                 for (int i = 0; i < items.ElementCount; i++) {
                     // free contents
                     free(cur);
@@ -253,7 +295,7 @@ namespace Arenas {
             var page = pages.Last();
             if (page.IsTop(itemPtr + sizeBytes)) {
                 // if the item as at the top of the current page then simply pop it off
-                page.Pop(sizeBytes + sizeof(ItemHeader));
+                page.Pop(sizeBytes + itemHeaderSize);
                 pages.SetLast(page);
             }
             else {
@@ -352,6 +394,11 @@ namespace Arenas {
                 }
             }
 
+            // free page memory
+            foreach (var page in pages) {
+                page.Free();
+            }
+
             pages.Clear();
             freelists.Clear();
             objToPtr.Clear();
@@ -372,9 +419,23 @@ namespace Arenas {
                 }
 
                 // allocate one page to start
-                AllocPage(PageSize);
+                AllocPage(PageSize - sizeof(ulong));
             }
         }
+
+        #region IEnumerable
+        public Enumerator GetEnumerator() {
+            return new Enumerator(this);
+        }
+
+        IEnumerator<UnmanagedRef> IEnumerable<UnmanagedRef>.GetEnumerator() {
+            return GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() {
+            return GetEnumerator();
+        }
+        #endregion
 
         #region IDisposable
         protected virtual void Dispose(bool disposing) {
@@ -407,20 +468,6 @@ namespace Arenas {
         }
         #endregion
 
-        #region IEnumerable
-        public Enumerator GetEnumerator() {
-            return new Enumerator(this);
-        }
-
-        IEnumerator<UnmanagedRef> IEnumerable<UnmanagedRef>.GetEnumerator() {
-            return GetEnumerator();
-        }
-
-        IEnumerator IEnumerable.GetEnumerator() {
-            return GetEnumerator();
-        }
-        #endregion
-
         public bool IsDisposed { get { return disposedValue; } }
         public ArenaID ID { get { return id; } }
 
@@ -438,6 +485,7 @@ namespace Arenas {
         private static Dictionary<TypeHandle, Type> handleToType;
         private static object typeHandleLock;
         private static ZeroMemoryDelegate ZeroMemory;
+        private static readonly int itemHeaderSize;
 
         static Arena() {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
@@ -446,6 +494,11 @@ namespace Arenas {
             else {
                 ZeroMemory = ZeroMemPlatformIndependent;
             }
+
+            // item header size must be 64-bit word aligned to keep 64-bit word alignment for all items
+            // allocated to the arena
+            itemHeaderSize = Page.AlignCeil(sizeof(ItemHeader), sizeof(ulong));
+            Debug.Assert((itemHeaderSize % sizeof(ulong)) == 0);
 
             finalizedRemovals = new ConcurrentQueue<ArenaID>();
             arenas = new Dictionary<ArenaID, WeakReference<Arena>>();
@@ -597,15 +650,31 @@ namespace Arenas {
 
         private static void ZeroMemPlatformIndependent(IntPtr ptr, UIntPtr length) {
             ulong size = (ulong)length;
-            if (size % sizeof(ulong) != 0) {
-                throw new ArgumentException("Size must be divisible by sizeof(ulong)", nameof(length));
-            }
-            
-            var cur = (ulong*)ptr;
-            var count = size / sizeof(ulong);
 
-            for (ulong i = 0; i < count; i++, cur++) {
-                *cur = 0;
+            // clear to word alignment
+            var byteptr = (byte*)ptr;
+            var bytes = (int)((ulong)byteptr & 0b111);
+            for (int i = 0; i < bytes; i++, byteptr++) {
+                *byteptr = 0;
+            }
+
+            size -= (ulong)bytes;
+
+            // clear words
+            var count = size / sizeof(ulong);
+            var longptr = (ulong*)byteptr;
+
+            for (ulong i = 0; i < count; i++, longptr++) {
+                *longptr = 0;
+            }
+
+            size -= count * sizeof(ulong);
+
+            // clear remaining bytes
+            byteptr = (byte*)longptr;
+            bytes = (int)size;
+            for (int i = 0; i < bytes; i++, byteptr++) {
+                *byteptr = 0;
             }
         }
         #endregion
@@ -632,10 +701,21 @@ namespace Arenas {
             /// </summary>
             public int Offset;
 
-            public Page(IntPtr address, int size) {
+            private IntPtr freePtr;
+
+            public Page(IntPtr freePtr, IntPtr address, int size) {
+                this.freePtr = freePtr;
                 Address = address;
                 Size = size;
                 Offset = 0;
+            }
+
+            public void Free() {
+                if (freePtr == IntPtr.Zero) {
+                    return;
+                }
+                Marshal.FreeHGlobal(freePtr);
+                freePtr = IntPtr.Zero;
             }
 
             public IntPtr Push(int size) {
@@ -667,6 +747,24 @@ namespace Arenas {
 
             public static int AlignCeil(int addr, int size) {
                 return (addr + (size - 1)) & (~(size - 1));
+            }
+
+            public static IntPtr AlignFloor(IntPtr addr, int size) {
+                return (IntPtr)AlignFloor((ulong)addr, size);
+            }
+
+            public static IntPtr AlignCeil(IntPtr addr, int size) {
+                return (IntPtr)AlignCeil((ulong)addr, size);
+            }
+
+            public static ulong AlignFloor(ulong addr, int size) {
+                var sizel = (ulong)size;
+                return addr & (~(sizel - 1));
+            }
+
+            public static ulong AlignCeil(ulong addr, int size) {
+                var sizel = (ulong)size;
+                return (addr + (sizel - 1)) & (~(sizel - 1));
             }
         }
 
@@ -734,6 +832,9 @@ namespace Arenas {
             }
 
             public static int GetSize(IntPtr item) {
+                if (item == IntPtr.Zero) {
+                    return 0;
+                }
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 return header->Size;
             }
@@ -851,9 +952,9 @@ namespace Arenas {
                             continue;
                         }
 
-                        var ptr = curPage.Address + offset + sizeof(ItemHeader);
+                        var ptr = curPage.Address + offset + itemHeaderSize;
                         var header = ItemHeader.GetHeader(ptr);
-                        offset += header.Size + sizeof(ItemHeader);
+                        offset += header.Size + itemHeaderSize;
 
                         Type type;
                         if (!TryGetTypeFromHandle(header.TypeHandle, out type) || header.Size < 0 || offset < 0 || offset > curPage.Offset) {

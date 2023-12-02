@@ -24,6 +24,8 @@ namespace ArenasTest {
                 jack.Value->FirstName = "Jack";
                 jack.Value->LastName = "Black";
 
+                Console.WriteLine($"Size of UnmanagedRef: {Marshal.SizeOf(john)}");
+
                 Console.WriteLine(john);
                 Console.WriteLine(jack);
 
@@ -89,7 +91,7 @@ namespace ArenasTest {
         static unsafe void UnmanagedPtrList() {
             using (var arena = new Arena()) {
                 // allocate a list
-                var people = new ArenaList<UnsafeRef>(arena);
+                var people = new ArenaList<UnmanagedRef>(arena);
 
                 // allocate some people references
                 var john = arena.Allocate(new Person());
