@@ -192,7 +192,7 @@ namespace Arenas {
 
         public Arena Arena { 
             get {
-                return Arena.Get(Arena.ItemHeader.GetArenaID(pointer));
+                return Arena.Get(version.Arena);
             } 
         }
 
