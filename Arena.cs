@@ -215,6 +215,8 @@ namespace Arenas {
             IntPtr ptr;
             var page = pages.Last();
 
+            Debug.Assert((size % sizeof(ulong)) == 0);
+
             // try to claim size bytes in current page, will return null if out of space
             if ((ptr = page.Push(size)) == IntPtr.Zero) {
                 // out of space, allocate new page, rounding size up to nearest multiple of PageSize
@@ -226,6 +228,8 @@ namespace Arenas {
             }
 
             pages.SetLast(page);
+
+            Debug.Assert(((ulong)ptr % sizeof(ulong)) == 0);
             return ptr;
         }
 
@@ -809,7 +813,7 @@ namespace Arenas {
             // helper functions for manipulating an item header, which is always located
             // in memory right before where the item is allocated
             public static void SetVersion(IntPtr item, RefVersion version) {
-                var header = (ItemHeader*)(item - itemHeaderSize);
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 header->Version = version;
             }
 
@@ -821,27 +825,27 @@ namespace Arenas {
             }
 
             public static void SetSize(IntPtr item, int size) {
-                var header = (ItemHeader*)(item - itemHeaderSize);
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 header->Size = size;
             }
 
             public static int GetSize(IntPtr item) {
-                var header = (ItemHeader*)(item - itemHeaderSize);
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 return header->Size;
             }
 
             public static void SetNextFree(IntPtr item, IntPtr next) {
-                var header = (ItemHeader*)(item - itemHeaderSize);
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 header->NextFree = next;
             }
 
             public static IntPtr GetNextFree(IntPtr item) {
-                var header = (ItemHeader*)(item - itemHeaderSize);
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 return header->NextFree;
             }
 
             public static void SetTypeHandle(IntPtr item, TypeHandle handle) {
-                var header = (ItemHeader*)(item - itemHeaderSize);
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 header->TypeHandle = handle;
             }
 
@@ -849,22 +853,22 @@ namespace Arenas {
                 if (item == IntPtr.Zero) {
                     return new TypeHandle(0);
                 }
-                var header = (ItemHeader*)(item - itemHeaderSize);
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 return header->TypeHandle;
             }
 
             public static void SetHeader(IntPtr item, ItemHeader itemHeader) {
-                var header = (ItemHeader*)(item - itemHeaderSize);
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 *header = itemHeader;
             }
 
             public static ItemHeader GetHeader(IntPtr item) {
-                var header = (ItemHeader*)(item - itemHeaderSize);
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 return *header;
             }
 
             public static void Invalidate(IntPtr item) {
-                var header = (ItemHeader*)(item - itemHeaderSize);
+                var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 header->Version = header->Version.Invalidate();
             }
 
