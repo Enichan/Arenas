@@ -12,17 +12,12 @@ namespace Arenas {
     unsafe readonly public struct UnsafeRef<T> : IUnmanagedRef, IEquatable<UnsafeRef<T>> where T : unmanaged {
         public readonly UnsafeRef Reference;
 
-        public UnsafeRef(T* pointer, RefVersion version) {
-            Reference = new UnsafeRef((IntPtr)pointer, version);
-        }
-
         public UnsafeRef(UnsafeRef reference) {
             Reference = reference;
         }
 
-        public UnsafeRef(T* ptr, Arena arena, RefVersion version, int v) {
-#warning implement
-            Reference = new UnsafeRef(typeof(T), (IntPtr)ptr, arena, version, v);
+        public UnsafeRef(T* pointer, RefVersion version, int elementCount) {
+            Reference = new UnsafeRef((IntPtr)pointer, version, elementCount);
         }
 
         public bool TryGetValue(out T* ptr) {
@@ -32,19 +27,29 @@ namespace Arenas {
 
         #region Copying
         public void CopyTo(T[] dest) {
-            Reference.CopyTo(dest);
+            var elementCount = ElementCount;
+            Reference.CopyTo(dest, 0, 0, elementCount, elementCount, typeof(T));
         }
 
         public void CopyTo(T[] dest, int destIndex) {
-            Reference.CopyTo(dest, destIndex);
+            var elementCount = ElementCount;
+            Reference.CopyTo(dest, destIndex, 0, elementCount, elementCount, typeof(T));
         }
 
         public void CopyTo(T[] dest, int destIndex, int sourceIndex, int count) {
-            Reference.CopyTo(dest, destIndex, sourceIndex, count);
+            var elementCount = ElementCount;
+            Reference.CopyTo(dest, destIndex, sourceIndex, count, elementCount, typeof(T));
         }
 
         public T[] ToArray() {
-            return Reference.ToArray<T>();
+            if (!HasValue) {
+                throw new NullReferenceException($"Error in UnmanagedRef<{typeof(T)}>.ToArray: HasValue was false");
+            }
+
+            var elementCount = ElementCount;
+            var items = new T[elementCount];
+            Reference.CopyTo(items, 0, 0, elementCount, elementCount, typeof(T));
+            return items;
         }
         #endregion
 
@@ -65,6 +70,10 @@ namespace Arenas {
         //}
 
         public override string ToString() {
+            var elementCount = ElementCount;
+            if (elementCount > 1) {
+                return $"UnsafeRef<{GetType().GenericTypeArguments[0].Name}>(ElementCount={elementCount})";
+            }
             var ptr = Value;
             return ptr == null ? string.Empty : (*ptr).ToString();
         }
@@ -105,8 +114,7 @@ namespace Arenas {
         }
 
         public static explicit operator UnsafeRef<T>(UnsafeRef uref) {
-#warning foo
-            return new UnsafeRef<T>((T*)uref.RawUnsafePointer, uref.Version);
+            return new UnsafeRef<T>(uref);
         }
 
         public T* this[int index] { get { return (T*)Reference[index]; } }
@@ -126,14 +134,8 @@ namespace Arenas {
         private readonly BitpackedPtr pointer;
         private readonly RefVersion version;
 
-        public UnsafeRef(IntPtr pointer, RefVersion version) {
+        public UnsafeRef(IntPtr pointer, RefVersion version, int elementCount) {
             this.pointer = new BitpackedPtr(pointer, 0);
-            this.version = version;
-        }
-
-        public UnsafeRef(Type type, IntPtr ptr, Arena arena, RefVersion version, int v) : this() {
-#warning implement
-            this.pointer = new BitpackedPtr(ptr, 0);
             this.version = version;
         }
 
@@ -157,7 +159,7 @@ namespace Arenas {
             CopyTo(dest, destIndex, sourceIndex, count, -1);
         }
 
-        private void CopyTo<T>(T[] dest, int destIndex, int sourceIndex, int count, int elementCount) {
+        internal void CopyTo<T>(T[] dest, int destIndex, int sourceIndex, int count, int elementCount, Type type = null) {
             if (dest is null) {
                 throw new ArgumentNullException(nameof(dest));
             }
@@ -176,11 +178,12 @@ namespace Arenas {
                 throw new ArgumentOutOfRangeException(nameof(sourceIndex));
             }
 
+            type = type ?? Type;
             var cur = RawUnsafePointer;
-            var elementSize = Marshal.SizeOf(Type);
+            var elementSize = Marshal.SizeOf(type);
 
             for (int i = 0; i < elementCount; i++) {
-                dest[i] = (T)Marshal.PtrToStructure(cur, Type);
+                dest[i] = (T)Marshal.PtrToStructure(cur, type);
                 cur += elementSize;
             }
         }

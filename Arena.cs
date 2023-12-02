@@ -50,7 +50,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr<T>(IntPtr) did not point to a valid item.");
             }
 
-            return new UnsafeRef<T>((T*)ptr, this, version, header.Size / sizeof(T));
+            return new UnsafeRef<T>((T*)ptr, version, header.Size / sizeof(T));
         }
 
         public UnsafeRef UnmanagedRefFromPtr(IntPtr ptr) {
@@ -70,7 +70,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr(IntPtr) did not point to a valid item.");
             }
 
-            return new UnsafeRef(type, ptr, this, version, header.Size / Marshal.SizeOf(type));
+            return new UnsafeRef(ptr, version, header.Size / Marshal.SizeOf(type));
         }
 
         private Page AllocPage(int size) {
@@ -208,7 +208,7 @@ namespace Arenas {
             count = (int)sizeBytes / sizeof(T);
 
             // return pointer as an UnmanagedRef
-            return new UnsafeRef<T>((T*)ptr, this, version, count);
+            return new UnsafeRef<T>((T*)ptr, version, count);
         }
 
         private IntPtr Push(int size) {
@@ -251,10 +251,11 @@ namespace Arenas {
 
             enumVersion++;
 
-            var free = ArenaContentsHelper.GetFreeDelegate(items.Type);
-            var elementSize = Marshal.SizeOf(items.Type);
+            var type = items.Type;
+            var free = ArenaContentsHelper.GetFreeDelegate(type);
+            var elementSize = Marshal.SizeOf(type);
 
-            if (typeof(IArenaContents).IsAssignableFrom(items.Type)) {
+            if (typeof(IArenaContents).IsAssignableFrom(type)) {
                 for (int i = 0; i < items.ElementCount; i++) {
                     // free contents
                     free(cur);
