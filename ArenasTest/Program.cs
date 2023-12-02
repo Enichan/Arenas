@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace ArenasTest {
     class Program {
         static unsafe void Main(string[] args) {
-            UnsafeRef<Person> staleRefTest;
+            UnmanagedRef<Person> staleRefTest;
 
             using (var arena = new Arena()) {
                 // allocate some people in the arena
@@ -87,7 +87,7 @@ namespace ArenasTest {
         static unsafe void UnmanagedPtrList() {
             using (var arena = new Arena()) {
                 // allocate a list
-                var people = new ArenaList<UnsafeRef>(arena);
+                var people = new ArenaList<UnmanagedRef>(arena);
 
                 // allocate some people references
                 var john = arena.Allocate(new Person());

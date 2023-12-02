@@ -13,7 +13,7 @@ namespace Arenas {
     public unsafe struct ArenaList<T> : IList<T> where T : unmanaged {
         private const int defaultCapacity = 4;
 
-        private UnsafeRef<UnmanagedList> info;
+        private UnmanagedRef<UnmanagedList> info;
 
         public ArenaList(Arena arena, int capacity = defaultCapacity) {
             if (arena is null) {

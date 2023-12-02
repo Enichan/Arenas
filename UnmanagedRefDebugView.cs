@@ -7,9 +7,9 @@ using System.Threading.Tasks;
 
 namespace Arenas {
     internal unsafe readonly struct UnmanagedRefDebugView<T> where T : unmanaged {
-        private readonly UnsafeRef<T> uref;
+        private readonly UnmanagedRef<T> uref;
 
-        public UnmanagedRefDebugView(UnsafeRef<T> uref) {
+        public UnmanagedRefDebugView(UnmanagedRef<T> uref) {
             this.uref = uref;
         }
 
@@ -28,9 +28,9 @@ namespace Arenas {
     }
 
     internal readonly struct UnmanagedRefDebugView {
-        private readonly UnsafeRef uref;
+        private readonly UnmanagedRef uref;
 
-        public UnmanagedRefDebugView(UnsafeRef uref) {
+        public UnmanagedRefDebugView(UnmanagedRef uref) {
             this.uref = uref;
         }
 

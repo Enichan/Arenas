@@ -9,7 +9,7 @@ using System.Runtime.InteropServices;
 
 namespace Arenas {
     // NOTE: all items allocated to the arena will be aligned to a 64-bit word boundary and their size will be a multiple of 64-bits
-    unsafe public class Arena : IDisposable, IEnumerable<UnsafeRef> {
+    unsafe public class Arena : IDisposable, IEnumerable<UnmanagedRef> {
         public const int PageSize = 4096;
 
         private Dictionary<object, ObjectEntry> objToPtr;
@@ -29,11 +29,11 @@ namespace Arenas {
             Clear(false);
         }
 
-        public UnsafeRef<T> UnmanagedRefFromPtr<T>(T* ptr) where T : unmanaged {
+        public UnmanagedRef<T> UnmanagedRefFromPtr<T>(T* ptr) where T : unmanaged {
             return UnmanagedRefFromPtr<T>((IntPtr)ptr);
         }
 
-        public UnsafeRef<T> UnmanagedRefFromPtr<T>(IntPtr ptr) where T : unmanaged {
+        public UnmanagedRef<T> UnmanagedRefFromPtr<T>(IntPtr ptr) where T : unmanaged {
             if (ptr == IntPtr.Zero) {
                 throw new ArgumentNullException(nameof(ptr));
             }
@@ -50,10 +50,10 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr<T>(IntPtr) did not point to a valid item.");
             }
 
-            return new UnsafeRef<T>((T*)ptr, version, header.Size / sizeof(T));
+            return new UnmanagedRef<T>((T*)ptr, version, header.Size / sizeof(T));
         }
 
-        public UnsafeRef UnmanagedRefFromPtr(IntPtr ptr) {
+        public UnmanagedRef UnmanagedRefFromPtr(IntPtr ptr) {
             if (ptr == IntPtr.Zero) {
                 throw new ArgumentNullException(nameof(ptr));
             }
@@ -70,7 +70,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr(IntPtr) did not point to a valid item.");
             }
 
-            return new UnsafeRef(ptr, version, header.Size / Marshal.SizeOf(type));
+            return new UnmanagedRef(ptr, version, header.Size / Marshal.SizeOf(type));
         }
 
         private Page AllocPage(int size) {
@@ -138,21 +138,21 @@ namespace Arenas {
             return ptr;
         }
 
-        public UnsafeRef<T> Allocate<T>(T item) where T : unmanaged {
+        public UnmanagedRef<T> Allocate<T>(T item) where T : unmanaged {
             var items = AllocCount<T>(1);
             items.Value[0] = item;
             ArenaContentsHelper.SetArenaID(items.Value, id);
             return items;
         }
 
-        public UnsafeRef<T> Allocate<T>(ref T item) where T : unmanaged {
+        public UnmanagedRef<T> Allocate<T>(ref T item) where T : unmanaged {
             var items = AllocCount<T>(1);
             items.Value[0] = item;
             ArenaContentsHelper.SetArenaID(items.Value, id);
             return items;
         }
 
-        public UnsafeRef<T> AllocCount<T>(int count) where T : unmanaged {
+        public UnmanagedRef<T> AllocCount<T>(int count) where T : unmanaged {
             if (count <= 0) {
                 throw new ArgumentOutOfRangeException(nameof(count));
             }
@@ -170,7 +170,7 @@ namespace Arenas {
             return items;
         }
 
-        public UnsafeRef<T> _AllocValues<T>(int count) where T : unmanaged {
+        public UnmanagedRef<T> _AllocValues<T>(int count) where T : unmanaged {
             enumVersion++;
 
             Type type = typeof(T);
@@ -209,7 +209,7 @@ namespace Arenas {
             count = (int)sizeBytes / sizeof(T);
 
             // return pointer as an UnmanagedRef
-            return new UnsafeRef<T>((T*)ptr, version, count);
+            return new UnmanagedRef<T>((T*)ptr, version, count);
         }
 
         private IntPtr Push(int size) {
@@ -243,7 +243,7 @@ namespace Arenas {
             Free(items.Reference);
         }
 
-        public void Free(in UnsafeRef items) {
+        public void Free(in UnmanagedRef items) {
             IntPtr cur;
             if (!items.TryGetValue(out cur)) {
                 // can't free that ya silly bugger
@@ -267,7 +267,7 @@ namespace Arenas {
             _FreeValues(items.Value);
         }
 
-        public void Free<T>(in UnsafeRef<T> items) where T : unmanaged {
+        public void Free<T>(in UnmanagedRef<T> items) where T : unmanaged {
             T* cur;
             if (!items.TryGetValue(out cur)) {
                 // can't free that ya silly bugger
@@ -428,7 +428,7 @@ namespace Arenas {
             return new Enumerator(this);
         }
 
-        IEnumerator<UnsafeRef> IEnumerable<UnsafeRef>.GetEnumerator() {
+        IEnumerator<UnmanagedRef> IEnumerable<UnmanagedRef>.GetEnumerator() {
             return GetEnumerator();
         }
 
@@ -921,19 +921,19 @@ namespace Arenas {
         }
 
         [Serializable]
-        public struct Enumerator : IEnumerator<UnsafeRef>, IEnumerator {
+        public struct Enumerator : IEnumerator<UnmanagedRef>, IEnumerator {
             private Arena arena;
             private int pageIndex;
             private int offset;
             private int version;
-            private UnsafeRef current;
+            private UnmanagedRef current;
 
             internal Enumerator(Arena arena) {
                 this.arena = arena;
                 pageIndex = 0;
                 offset = 0;
                 version = arena.enumVersion;
-                current = default(UnsafeRef);
+                current = default(UnmanagedRef);
             }
 
             public void Dispose() {
@@ -978,11 +978,11 @@ namespace Arenas {
 
                 pageIndex = arena.pages.Count + 1;
                 offset = 0;
-                current = default(UnsafeRef);
+                current = default(UnmanagedRef);
                 return false;
             }
 
-            public UnsafeRef Current {
+            public UnmanagedRef Current {
                 get {
                     return current;
                 }
@@ -1004,7 +1004,7 @@ namespace Arenas {
 
                 pageIndex = 0;
                 offset = 0;
-                current = default(UnsafeRef);
+                current = default(UnmanagedRef);
             }
         }
 

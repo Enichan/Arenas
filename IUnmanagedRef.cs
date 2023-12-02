@@ -2,7 +2,7 @@
 using System.Text;
 
 namespace Arenas {
-    public interface IUnmanagedRef : IEquatable<UnsafeRef> {
-        UnsafeRef Reference { get; }
+    public interface IUnmanagedRef : IEquatable<UnmanagedRef> {
+        UnmanagedRef Reference { get; }
     }
 }

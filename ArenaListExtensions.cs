@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Arenas {
     public static class ArenaListExtensions {
-        public static void Add<T>(this ArenaList<UnsafeRef> list, in T uref) where T : struct, IUnmanagedRef {
+        public static void Add<T>(this ArenaList<UnmanagedRef> list, in T uref) where T : struct, IUnmanagedRef {
             list.Add(uref.Reference);
         }
 

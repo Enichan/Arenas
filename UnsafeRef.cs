@@ -9,15 +9,15 @@ namespace Arenas {
     [DebuggerTypeProxy(typeof(UnmanagedRefDebugView<>))]
     [DebuggerDisplay("{HasValue ? ToString() : null}")]
     [StructLayout(LayoutKind.Sequential)]
-    unsafe readonly public struct UnsafeRef<T> : IUnmanagedRef, IEquatable<UnsafeRef<T>> where T : unmanaged {
-        public readonly UnsafeRef Reference;
+    unsafe readonly public struct UnmanagedRef<T> : IUnmanagedRef, IEquatable<UnmanagedRef<T>> where T : unmanaged {
+        public readonly UnmanagedRef Reference;
 
-        public UnsafeRef(UnsafeRef reference) {
+        public UnmanagedRef(UnmanagedRef reference) {
             Reference = reference;
         }
 
-        public UnsafeRef(T* pointer, RefVersion version, int elementCount) {
-            Reference = new UnsafeRef((IntPtr)pointer, version, elementCount);
+        public UnmanagedRef(T* pointer, RefVersion version, int elementCount) {
+            Reference = new UnmanagedRef((IntPtr)pointer, version, elementCount);
         }
 
         public bool TryGetValue(out T* ptr) {
@@ -56,7 +56,7 @@ namespace Arenas {
         public override string ToString() {
             var elementCount = ElementCount;
             if (elementCount > 1) {
-                return $"UnsafeRef<{GetType().GenericTypeArguments[0].Name}>(ElementCount={elementCount})";
+                return $"UnmanagedRef<{GetType().GenericTypeArguments[0].Name}>(ElementCount={elementCount})";
             }
             var ptr = Value;
             return ptr == null ? string.Empty : (*ptr).ToString();
@@ -64,11 +64,11 @@ namespace Arenas {
 
         #region Equality
         public override bool Equals(object obj) {
-            return obj is UnsafeRef<T> @ref &&
+            return obj is UnmanagedRef<T> @ref &&
                    Reference.Equals(@ref.Reference);
         }
 
-        public bool Equals(UnsafeRef<T> other) {
+        public bool Equals(UnmanagedRef<T> other) {
             return Reference.Equals(other.Reference);
         }
 
@@ -76,29 +76,29 @@ namespace Arenas {
             return Reference.GetHashCode();
         }
 
-        public bool Equals(UnsafeRef other) {
+        public bool Equals(UnmanagedRef other) {
             return Reference.Equals(other);
         }
 
-        public static bool operator ==(UnsafeRef<T> left, UnsafeRef<T> right) {
+        public static bool operator ==(UnmanagedRef<T> left, UnmanagedRef<T> right) {
             return left.Equals(right);
         }
 
-        public static bool operator !=(UnsafeRef<T> left, UnsafeRef<T> right) {
+        public static bool operator !=(UnmanagedRef<T> left, UnmanagedRef<T> right) {
             return !(left == right);
         }
         #endregion
 
-        public static explicit operator IntPtr(UnsafeRef<T> uref) {
+        public static explicit operator IntPtr(UnmanagedRef<T> uref) {
             return uref.Reference.RawUnsafePointer;
         }
 
-        public static explicit operator UnsafeRef(UnsafeRef<T> uref) {
+        public static explicit operator UnmanagedRef(UnmanagedRef<T> uref) {
             return uref.Reference;
         }
 
-        public static explicit operator UnsafeRef<T>(UnsafeRef uref) {
-            return new UnsafeRef<T>(uref);
+        public static explicit operator UnmanagedRef<T>(UnmanagedRef uref) {
+            return new UnmanagedRef<T>(uref);
         }
 
         public int ElementCount { 
@@ -124,17 +124,17 @@ namespace Arenas {
         public bool HasValue { get { return Reference.HasValue; } }
         public RefVersion Version { get { return Reference.Version; } }
         public int Size { get { return Reference.Size; } }
-        UnsafeRef IUnmanagedRef.Reference { get { return Reference; } }
+        UnmanagedRef IUnmanagedRef.Reference { get { return Reference; } }
     }
 
     [DebuggerTypeProxy(typeof(UnmanagedRefDebugView))]
     [DebuggerDisplay("{HasValue ? ToString() : null}")]
     [StructLayout(LayoutKind.Sequential)]
-    unsafe readonly public struct UnsafeRef : IUnmanagedRef, IEquatable<UnsafeRef> {
+    unsafe readonly public struct UnmanagedRef : IUnmanagedRef, IEquatable<UnmanagedRef> {
         private readonly BitpackedPtr pointer;
         private readonly RefVersion version;
 
-        public UnsafeRef(IntPtr pointer, RefVersion version, int elementCount) {
+        public UnmanagedRef(IntPtr pointer, RefVersion version, int elementCount) {
             if (elementCount > 0 && elementCount <= BitpackedPtr.LowerMask) {
                 this.pointer = new BitpackedPtr(pointer, elementCount);
             }
@@ -208,7 +208,7 @@ namespace Arenas {
         public override string ToString() {
             var elementCount = ElementCount;
             if (elementCount > 1) {
-                return $"UnsafeRef(Type={Type}, ElementCount={elementCount})";
+                return $"UnmanagedRef(Type={Type}, ElementCount={elementCount})";
             }
 
             var ptr = Value;
@@ -220,7 +220,7 @@ namespace Arenas {
             return inst.ToString();
         }
 
-        public static explicit operator IntPtr(UnsafeRef uref) {
+        public static explicit operator IntPtr(UnmanagedRef uref) {
             return uref.pointer.Value;
         }
 
@@ -233,12 +233,12 @@ namespace Arenas {
 
         #region Equality
         public override bool Equals(object obj) {
-            return obj is UnsafeRef @ref &&
+            return obj is UnmanagedRef @ref &&
                 EqualityComparer<BitpackedPtr>.Default.Equals(pointer, @ref.pointer) &&
                 version.Equals(@ref.version);
         }
 
-        public bool Equals(UnsafeRef other) {
+        public bool Equals(UnmanagedRef other) {
             return
                 EqualityComparer<BitpackedPtr>.Default.Equals(pointer, other.pointer) &&
                 version.Equals(other.version);
@@ -251,11 +251,11 @@ namespace Arenas {
             return hashCode;
         }
 
-        public static bool operator ==(UnsafeRef left, UnsafeRef right) {
+        public static bool operator ==(UnmanagedRef left, UnmanagedRef right) {
             return left.Equals(right);
         }
 
-        public static bool operator !=(UnsafeRef left, UnsafeRef right) {
+        public static bool operator !=(UnmanagedRef left, UnmanagedRef right) {
             return !(left == right);
         }
         #endregion
@@ -341,6 +341,6 @@ namespace Arenas {
         internal int PointerPackedValue { get { return pointer.PackedValue; } }
         public RefVersion Version { get { return version; } }
         public IntPtr RawUnsafePointer { get { return pointer.Value; } }
-        UnsafeRef IUnmanagedRef.Reference { get { return this; } }
+        UnmanagedRef IUnmanagedRef.Reference { get { return this; } }
     }
 }

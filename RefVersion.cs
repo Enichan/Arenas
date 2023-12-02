@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Arenas {
     // Versions contain information about the arena ID, item version number, and optional
-    // element count. This allows UnsafeRef to store the element count for items with low
+    // element count. This allows UnmanagedRef to store the element count for items with low
     // version numbers (up to 32767) to store element counts up to 32767. The valid bit
     // indicates that an item is allocated in the arena if set, and indicates free space
     // if unset.
