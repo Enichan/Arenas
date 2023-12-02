@@ -17,6 +17,7 @@ namespace Arenas {
         private Dictionary<int, Freelist> freelists;
         private ArenaID id;
         private int enumVersion;
+        private bool initialized;
 
         public Arena() {
             objToPtr = new Dictionary<object, ObjectEntry>(ObjectReferenceEqualityComparer.Instance);
@@ -360,8 +361,15 @@ namespace Arenas {
                 id = ArenaID.Empty;
             }
             else {
-                // get a new ID to invalidate any stale references
-                ChangeID(this);
+                if (!initialized) {
+                    // get an ID and ID->Arena mapping entry
+                    initialized = true;
+                    Add(this);
+                }
+                else {
+                    // get a new ID to invalidate any stale references
+                    ChangeID(this);
+                }
 
                 // allocate one page to start
                 AllocPage(PageSize);
@@ -417,7 +425,7 @@ namespace Arenas {
         public ArenaID ID { get { return id; } }
 
         #region Static
-        private const int FinalizedRemovalsPerAdd = 8;
+        private const int MaxFinalizedRemovalsPerAdd = 8;
 
         [DllImport("kernel32.dll")]
         private static extern void RtlZeroMemory(IntPtr dst, UIntPtr length);
@@ -448,7 +456,11 @@ namespace Arenas {
             typeHandleLock = new object();
         }
 
-        private static ArenaID Add(Arena arena) {
+        private static void Add(Arena arena) {
+            Add(arena, false);
+        }
+
+        private static void Add(Arena arena, bool hasPreviousEntry) {
             bool doRemovals = true;
 
             while (true) {
@@ -459,11 +471,14 @@ namespace Arenas {
                     if (doRemovals && !finalizedRemovals.IsEmpty) {
                         // if there are pending removals via finalizer, remove them now
                         // but only remove a limited number as to not block for too long
-                        for (int i = 0; i < FinalizedRemovalsPerAdd; i++) {
+                        for (int i = 0; i < MaxFinalizedRemovalsPerAdd; i++) {
                             ArenaID removeID;
                             if (finalizedRemovals.TryDequeue(out removeID)) {
                                 arenas.Remove(removeID);
                                 doRemovals = false;
+                            }
+                            else {
+                                break;
                             }
                         }
                     }
@@ -472,19 +487,23 @@ namespace Arenas {
                         continue;
                     }
 
-                    arenas[id] = new WeakReference<Arena>(arena);
-                }
+                    if (hasPreviousEntry) {
+                        var removed = arenas.Remove(arena.id);
+                        Debug.Assert(removed);
+                    }
+                    else {
+                        Debug.Assert(!arenas.ContainsKey(arena.id));
+                    }
 
-                return id;
+                    arenas[id] = new WeakReference<Arena>(arena);
+                    arena.id = id;
+                    break;
+                }
             }
         }
 
         private static void ChangeID(Arena arena) {
-            var oldID = arena.id;
-            arena.id = Add(arena);
-            if (oldID != ArenaID.Empty) {
-                Remove(oldID, false);
-            }
+            Add(arena, true);
         }
 
         private static void Remove(ArenaID id, bool fromFinalizer) {
