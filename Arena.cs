@@ -705,7 +705,11 @@ namespace Arenas {
             }
 
             public void Free() {
+                if (freePtr == IntPtr.Zero) {
+                    return;
+                }
                 Marshal.FreeHGlobal(freePtr);
+                freePtr = IntPtr.Zero;
             }
 
             public IntPtr Push(int size) {
