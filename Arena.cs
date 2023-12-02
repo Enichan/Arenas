@@ -181,7 +181,7 @@ namespace Arenas {
             Type type = typeof(T);
             int elementSize = sizeof(T);
 
-            ulong sizeBytes = (uint)elementSize * (uint)count;
+            ulong sizeBytes = (ulong)elementSize * (ulong)count;
 
             // make sure size in bytes is at least one 64-bit word, is 64-bit word
             // aligned, is a power of 2 for multiple elements and doesn't overflow
