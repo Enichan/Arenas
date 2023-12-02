@@ -121,6 +121,8 @@ namespace Arenas {
                     if (Reference.Version.Item.HasElementCount) {
                         return Reference.Version.Item.ElementCount;
                     }
+
+                    // this is the slow path
                     return Size / sizeof(T);
                 }
                 return packedValue;
@@ -328,11 +330,13 @@ namespace Arenas {
                     return 0;
                 }
 
-                var packedValue = PointerPackedValue;
+                var packedValue = pointer.PackedValue;
                 if (packedValue == 0) {
                     if (version.Item.HasElementCount) {
                         return version.Item.ElementCount;
                     }
+
+                    // this is the slow path
                     return Size / Marshal.SizeOf(Type);
                 }
                 return packedValue;
@@ -350,9 +354,10 @@ namespace Arenas {
             }
         }
 
-        internal int PointerPackedValue { get { return pointer.PackedValue; } }
         public RefVersion Version { get { return version; } }
         public IntPtr RawUnsafePointer { get { return pointer.Value; } }
+
+        internal int PointerPackedValue { get { return pointer.PackedValue; } }
         UnmanagedRef IUnmanagedRef.Reference { get { return this; } }
     }
 }

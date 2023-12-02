@@ -164,7 +164,9 @@ namespace Arenas {
 
             if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
                 var cur = items.Value;
-                for (int i = 0; i < items.ElementCount; i++, cur++) {
+                var elementCount = items.ElementCount;
+
+                for (int i = 0; i < elementCount; i++, cur++) {
                     // set arena ID
                     ArenaContentsHelper.SetArenaID(cur, id);
                 }
@@ -179,7 +181,7 @@ namespace Arenas {
             Type type = typeof(T);
             int elementSize = sizeof(T);
 
-            ulong sizeBytes = (uint)elementSize * (uint)count;
+            ulong sizeBytes = (ulong)elementSize * (ulong)count;
 
             // make sure size in bytes is at least one 64-bit word, is 64-bit word
             // aligned, is a power of 2 for multiple elements and doesn't overflow
@@ -229,6 +231,7 @@ namespace Arenas {
                 // claim size bytes in current page
                 // this will always work because we just made sure the new page fits the requested size
                 ptr = page.Push(size);
+                Debug.Assert(ptr != IntPtr.Zero);
             }
 
             pages.SetLast(page);
@@ -260,7 +263,8 @@ namespace Arenas {
             var elementSize = Marshal.SizeOf(type);
 
             if (typeof(IArenaContents).IsAssignableFrom(type)) {
-                for (int i = 0; i < items.ElementCount; i++) {
+                var elementCount = items.ElementCount;
+                for (int i = 0; i < elementCount; i++) {
                     // free contents
                     free(cur);
                     cur += elementSize;
@@ -280,7 +284,8 @@ namespace Arenas {
             enumVersion++;
 
             if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
-                for (int i = 0; i < items.ElementCount; i++, cur++) {
+                var elementCount = items.ElementCount;
+                for (int i = 0; i < elementCount; i++, cur++) {
                     // free contents
                     ArenaContentsHelper.Free(cur);
                 }
@@ -525,13 +530,14 @@ namespace Arenas {
 
                 lock (arenasLock) {
                     if (doRemovals && !finalizedRemovals.IsEmpty) {
+                        doRemovals = false;
+
                         // if there are pending removals via finalizer, remove them now
                         // but only remove a limited number as to not block for too long
                         for (int i = 0; i < MaxFinalizedRemovalsPerAdd; i++) {
                             ArenaID removeID;
                             if (finalizedRemovals.TryDequeue(out removeID)) {
                                 arenas.Remove(removeID);
-                                doRemovals = false;
                             }
                             else {
                                 break;
