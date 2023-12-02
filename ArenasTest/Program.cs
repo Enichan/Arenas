@@ -58,7 +58,6 @@ namespace ArenasTest {
 
                 // allocate a buffer for the bytes in the arena and copy them
                 var unmanagedBytes = arena.AllocCount<byte>(guidBytes.Length);
-                Console.WriteLine(unmanagedBytes.ElementCount);
                 Marshal.Copy(guidBytes, 0, (IntPtr)unmanagedBytes.Value, guidBytes.Length);
 
                 // check if the bytes are the same
