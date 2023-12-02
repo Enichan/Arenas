@@ -9,7 +9,7 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Arenas {
-    [DebuggerTypeProxy(typeof(UnmanagedListDebugView<>))]
+    [DebuggerTypeProxy(typeof(ArenaListDebugView<>))]
     public unsafe struct ArenaList<T> : IList<T> where T : unmanaged {
         private const int defaultCapacity = 4;
 
@@ -186,15 +186,32 @@ namespace Arenas {
             return IndexOf(item) >= 0;
         }
 
-        public void CopyTo(T[] array, int destIndex) {
+        public void CopyTo(T[] dest) {
+            CopyTo(0, dest, 0, Count);
+        }
+
+        public void CopyTo(T[] dest, int destIndex) {
+            CopyTo(0, dest, destIndex, Count);
+        }
+
+        public void CopyTo(int sourceIndex, T[] dest, int destIndex, int count) {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot CopyTo array from UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot CopyTo array from UnmanagedList<T>: list memory has previously been freed");
             }
+            if (count < 0) {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
+            if (destIndex < 0 || destIndex + count > dest.Length) {
+                throw new ArgumentOutOfRangeException(nameof(destIndex));
+            }
+            if (sourceIndex < 0 || sourceIndex + count > Count) {
+                throw new ArgumentOutOfRangeException(nameof(sourceIndex));
+            }
             var items = Arena.UnmanagedRefFromPtr<T>(info.Value->Items);
-            items.CopyTo(array, destIndex, 0, info.Value->Count);
+            items.CopyTo(dest, destIndex, sourceIndex, count);
         }
 
         public Enumerator GetEnumerator() {
@@ -328,10 +345,10 @@ namespace Arenas {
         public int Version;
     }
 
-    internal unsafe readonly struct UnmanagedListDebugView<T> where T : unmanaged {
+    internal unsafe readonly struct ArenaListDebugView<T> where T : unmanaged {
         private readonly ArenaList<T> list;
 
-        public UnmanagedListDebugView(ArenaList<T> list) {
+        public ArenaListDebugView(ArenaList<T> list) {
             this.list = list;
         }
 

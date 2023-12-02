@@ -171,6 +171,9 @@ namespace Arenas {
             if (!HasValue) {
                 throw new NullReferenceException($"Error in UnmanagedRef.CopyTo: HasValue was false");
             }
+            if (count < 0) {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
             if (destIndex < 0 || destIndex + count > dest.Length) {
                 throw new ArgumentOutOfRangeException(nameof(destIndex));
             }
@@ -184,11 +187,12 @@ namespace Arenas {
             }
 
             type = type ?? Type;
-            var cur = RawUnsafePointer;
-            var elementSize = Marshal.SizeOf(type);
 
-            for (int i = 0; i < elementCount; i++) {
-                dest[i] = (T)Marshal.PtrToStructure(cur, type);
+            var elementSize = Marshal.SizeOf(type);
+            var cur = RawUnsafePointer + elementSize * sourceIndex;
+
+            for (int i = 0; i < count; i++) {
+                dest[destIndex + i] = (T)Marshal.PtrToStructure(cur, type);
                 cur += elementSize;
             }
         }

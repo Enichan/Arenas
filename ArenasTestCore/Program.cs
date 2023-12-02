@@ -6,6 +6,8 @@ namespace ArenasTestCore {
     class Program {
         unsafe static void Main(string[] args) {
             using (var arena = new Arena()) {
+                Console.WriteLine($"Original string: {sourceText}");
+
                 // contrived example to split a string into words using an arena
                 // in order to avoid allocations
                 var words = new ArenaList<Word>(arena);
@@ -36,6 +38,7 @@ namespace ArenasTestCore {
 
                 addWord();
 
+                Console.Write("Split string: ");
                 foreach (var word in words) {
                     var s = new Span<char>(word.Data, word.Length);
                     foreach (var c in s) {
