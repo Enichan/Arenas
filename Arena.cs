@@ -530,13 +530,14 @@ namespace Arenas {
 
                 lock (arenasLock) {
                     if (doRemovals && !finalizedRemovals.IsEmpty) {
+                        doRemovals = false;
+
                         // if there are pending removals via finalizer, remove them now
                         // but only remove a limited number as to not block for too long
                         for (int i = 0; i < MaxFinalizedRemovalsPerAdd; i++) {
                             ArenaID removeID;
                             if (finalizedRemovals.TryDequeue(out removeID)) {
                                 arenas.Remove(removeID);
-                                doRemovals = false;
                             }
                             else {
                                 break;
