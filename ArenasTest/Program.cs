@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace ArenasTest {
     class Program {
         static unsafe void Main(string[] args) {
-            UnmanagedRef<Person> staleRefTest;
+            UnsafeRef<Person> staleRefTest;
 
             using (var arena = new Arena()) {
                 // allocate some people in the arena

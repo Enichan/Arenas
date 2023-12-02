@@ -13,7 +13,7 @@ namespace Arenas {
     public unsafe struct ArenaList<T> : IList<T> where T : unmanaged {
         private const int defaultCapacity = 4;
 
-        private UnmanagedRef<UnmanagedList> info;
+        private UnsafeRef<UnmanagedList> info;
 
         public ArenaList(Arena arena, int capacity = defaultCapacity) {
             if (arena is null) {
@@ -73,7 +73,8 @@ namespace Arenas {
             var newItems = Arena.AllocCount<T>(newMinCapacity);
             info.Value->Capacity = newItems.ElementCount; // we might get more capacity than requested
 
-            Buffer.MemoryCopy(items.Value, newItems.Value, newItems.Size, items.Size);
+            var newSize = newItems.Size;
+            Buffer.MemoryCopy(items.Value, newItems.Value, newSize, newSize);
             Arena.Free(items);
 
             info.Value->Items = (IntPtr)newItems.Value;

@@ -7,14 +7,10 @@ using System.Threading.Tasks;
 
 namespace Arenas {
     internal unsafe readonly struct UnmanagedRefDebugView<T> where T : unmanaged {
-        private readonly UnmanagedRef<T> uref;
+        private readonly UnsafeRef<T> uref;
 
-        public UnmanagedRefDebugView(UnmanagedRef<T> uref) {
+        public UnmanagedRefDebugView(UnsafeRef<T> uref) {
             this.uref = uref;
-        }
-
-        public UnmanagedRefDebugView(UnsafeRef<T> sref) {
-            this.uref = sref.ToUnmanaged();
         }
 
         public T[] Contents {
@@ -32,14 +28,10 @@ namespace Arenas {
     }
 
     internal readonly struct UnmanagedRefDebugView {
-        private readonly UnmanagedRef uref;
+        private readonly UnsafeRef uref;
 
-        public UnmanagedRefDebugView(UnmanagedRef uref) {
+        public UnmanagedRefDebugView(UnsafeRef uref) {
             this.uref = uref;
-        }
-
-        public UnmanagedRefDebugView(UnsafeRef sref) {
-            this.uref = sref.ToUnmanaged();
         }
 
         public object[] Contents {

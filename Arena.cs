@@ -9,7 +9,7 @@ using System.Runtime.InteropServices;
 
 namespace Arenas {
     // NOTE: all items allocated to the arena will be aligned to a 64-bit word boundary and their size will be a multiple of 64-bits
-    unsafe public class Arena : IDisposable, IEnumerable<UnmanagedRef> {
+    unsafe public class Arena : IDisposable, IEnumerable<UnsafeRef> {
         public const int PageSize = 4096;
 
         private Dictionary<object, ObjectEntry> objToPtr;
@@ -29,11 +29,11 @@ namespace Arenas {
             Clear(false);
         }
 
-        public UnmanagedRef<T> UnmanagedRefFromPtr<T>(T* ptr) where T : unmanaged {
+        public UnsafeRef<T> UnmanagedRefFromPtr<T>(T* ptr) where T : unmanaged {
             return UnmanagedRefFromPtr<T>((IntPtr)ptr);
         }
 
-        public UnmanagedRef<T> UnmanagedRefFromPtr<T>(IntPtr ptr) where T : unmanaged {
+        public UnsafeRef<T> UnmanagedRefFromPtr<T>(IntPtr ptr) where T : unmanaged {
             if (ptr == IntPtr.Zero) {
                 throw new ArgumentNullException(nameof(ptr));
             }
@@ -50,10 +50,10 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr<T>(IntPtr) did not point to a valid item.");
             }
 
-            return new UnmanagedRef<T>((T*)ptr, this, version, header.Size / sizeof(T));
+            return new UnsafeRef<T>((T*)ptr, this, version, header.Size / sizeof(T));
         }
 
-        public UnmanagedRef UnmanagedRefFromPtr(IntPtr ptr) {
+        public UnsafeRef UnmanagedRefFromPtr(IntPtr ptr) {
             if (ptr == IntPtr.Zero) {
                 throw new ArgumentNullException(nameof(ptr));
             }
@@ -70,7 +70,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr(IntPtr) did not point to a valid item.");
             }
 
-            return new UnmanagedRef(type, ptr, this, version, header.Size / Marshal.SizeOf(type));
+            return new UnsafeRef(type, ptr, this, version, header.Size / Marshal.SizeOf(type));
         }
 
         private Page AllocPage(int size) {
@@ -137,21 +137,21 @@ namespace Arenas {
             return ptr;
         }
 
-        public UnmanagedRef<T> Allocate<T>(T item) where T : unmanaged {
+        public UnsafeRef<T> Allocate<T>(T item) where T : unmanaged {
             var items = AllocCount<T>(1);
             items.Value[0] = item;
             ArenaContentsHelper.SetArenaID(items.Value, id);
             return items;
         }
 
-        public UnmanagedRef<T> Allocate<T>(ref T item) where T : unmanaged {
+        public UnsafeRef<T> Allocate<T>(ref T item) where T : unmanaged {
             var items = AllocCount<T>(1);
             items.Value[0] = item;
             ArenaContentsHelper.SetArenaID(items.Value, id);
             return items;
         }
 
-        public UnmanagedRef<T> AllocCount<T>(int count) where T : unmanaged {
+        public UnsafeRef<T> AllocCount<T>(int count) where T : unmanaged {
             if (count <= 0) {
                 throw new ArgumentOutOfRangeException(nameof(count));
             }
@@ -169,7 +169,7 @@ namespace Arenas {
             return items;
         }
 
-        public UnmanagedRef<T> _AllocValues<T>(int count) where T : unmanaged {
+        public UnsafeRef<T> _AllocValues<T>(int count) where T : unmanaged {
             enumVersion++;
 
             Type type = typeof(T);
@@ -208,7 +208,7 @@ namespace Arenas {
             count = (int)sizeBytes / sizeof(T);
 
             // return pointer as an UnmanagedRef
-            return new UnmanagedRef<T>((T*)ptr, this, version, count);
+            return new UnsafeRef<T>((T*)ptr, this, version, count);
         }
 
         private IntPtr Push(int size) {
@@ -239,10 +239,10 @@ namespace Arenas {
         }
 
         public void Free<T>(in T items) where T : struct, IUnmanagedRef {
-            Free(items.ToUnmanaged());
+            Free(items.Reference);
         }
 
-        public void Free(in UnmanagedRef items) {
+        public void Free(in UnsafeRef items) {
             IntPtr cur;
             if (!items.TryGetValue(out cur)) {
                 // can't free that ya silly bugger
@@ -265,7 +265,7 @@ namespace Arenas {
             _FreeValues(items.Value);
         }
 
-        public void Free<T>(in UnmanagedRef<T> items) where T : unmanaged {
+        public void Free<T>(in UnsafeRef<T> items) where T : unmanaged {
             T* cur;
             if (!items.TryGetValue(out cur)) {
                 // can't free that ya silly bugger
@@ -421,6 +421,20 @@ namespace Arenas {
             }
         }
 
+        #region IEnumerable
+        public Enumerator GetEnumerator() {
+            return new Enumerator(this);
+        }
+
+        IEnumerator<UnsafeRef> IEnumerable<UnsafeRef>.GetEnumerator() {
+            return GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() {
+            return GetEnumerator();
+        }
+        #endregion
+
         #region IDisposable
         protected virtual void Dispose(bool disposing) {
             if (!disposedValue) {
@@ -449,20 +463,6 @@ namespace Arenas {
             // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
-        }
-        #endregion
-
-        #region IEnumerable
-        public Enumerator GetEnumerator() {
-            return new Enumerator(this);
-        }
-
-        IEnumerator<UnmanagedRef> IEnumerable<UnmanagedRef>.GetEnumerator() {
-            return GetEnumerator();
-        }
-
-        IEnumerator IEnumerable.GetEnumerator() {
-            return GetEnumerator();
         }
         #endregion
 
@@ -830,6 +830,9 @@ namespace Arenas {
             }
 
             public static int GetSize(IntPtr item) {
+                if (item == IntPtr.Zero) {
+                    return 0;
+                }
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 return header->Size;
             }
@@ -916,19 +919,19 @@ namespace Arenas {
         }
 
         [Serializable]
-        public struct Enumerator : IEnumerator<UnmanagedRef>, IEnumerator {
+        public struct Enumerator : IEnumerator<UnsafeRef>, IEnumerator {
             private Arena arena;
             private int pageIndex;
             private int offset;
             private int version;
-            private UnmanagedRef current;
+            private UnsafeRef current;
 
             internal Enumerator(Arena arena) {
                 this.arena = arena;
                 pageIndex = 0;
                 offset = 0;
                 version = arena.enumVersion;
-                current = default(UnmanagedRef);
+                current = default(UnsafeRef);
             }
 
             public void Dispose() {
@@ -973,11 +976,11 @@ namespace Arenas {
 
                 pageIndex = arena.pages.Count + 1;
                 offset = 0;
-                current = default(UnmanagedRef);
+                current = default(UnsafeRef);
                 return false;
             }
 
-            public UnmanagedRef Current {
+            public UnsafeRef Current {
                 get {
                     return current;
                 }
@@ -999,7 +1002,7 @@ namespace Arenas {
 
                 pageIndex = 0;
                 offset = 0;
-                current = default(UnmanagedRef);
+                current = default(UnsafeRef);
             }
         }
 
