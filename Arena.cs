@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -16,6 +17,7 @@ namespace Arenas {
         private Dictionary<int, Freelist> freelists;
         private ArenaID id;
         private int enumVersion;
+        private bool initialized;
 
         public Arena() {
             objToPtr = new Dictionary<object, ObjectEntry>(ObjectReferenceEqualityComparer.Instance);
@@ -339,7 +341,7 @@ namespace Arenas {
             Clear(false);
         }
 
-        private void Clear(bool disposing) {
+        private void Clear(bool disposing, bool fromFinalizer = false) {
             enumVersion++;
 
             // free GCHandles
@@ -355,15 +357,19 @@ namespace Arenas {
             objToPtr.Clear();
 
             if (disposing) {
-                Remove(id);
+                Remove(id, fromFinalizer);
                 id = ArenaID.Empty;
             }
             else {
-                var oldID = id;
-
-                // removing and re-adding with a new ID will invalidate any stale references
-                Remove(oldID);
-                id = Add(this);
+                if (!initialized) {
+                    // get an ID and ID->Arena mapping entry
+                    initialized = true;
+                    Add(this);
+                }
+                else {
+                    // get a new ID to invalidate any stale references
+                    ChangeID(this);
+                }
 
                 // allocate one page to start
                 AllocPage(PageSize);
@@ -379,7 +385,7 @@ namespace Arenas {
 
                 // free unmanaged resources (unmanaged objects) and override finalizer
                 // set large fields to null
-                Clear(true);
+                Clear(true, !disposing);
 
                 pages = null;
                 freelists = null;
@@ -416,13 +422,17 @@ namespace Arenas {
         #endregion
 
         public bool IsDisposed { get { return disposedValue; } }
+        public ArenaID ID { get { return id; } }
 
         #region Static
+        private const int MaxFinalizedRemovalsPerAdd = 8;
+
         [DllImport("kernel32.dll")]
         private static extern void RtlZeroMemory(IntPtr dst, UIntPtr length);
         private delegate void ZeroMemoryDelegate(IntPtr dst, UIntPtr length);
 
-        private static Dictionary<ArenaID, Arena> arenas;
+        private static ConcurrentQueue<ArenaID> finalizedRemovals;
+        private static Dictionary<ArenaID, WeakReference<Arena>> arenas;
         private static object arenasLock;
         private static Dictionary<Type, TypeHandle> typeToHandle;
         private static Dictionary<TypeHandle, Type> handleToType;
@@ -437,7 +447,8 @@ namespace Arenas {
                 ZeroMemory = ZeroMemPlatformIndependent;
             }
 
-            arenas = new Dictionary<ArenaID, Arena>();
+            finalizedRemovals = new ConcurrentQueue<ArenaID>();
+            arenas = new Dictionary<ArenaID, WeakReference<Arena>>();
             arenasLock = new object();
 
             typeToHandle = new Dictionary<Type, TypeHandle>();
@@ -445,23 +456,67 @@ namespace Arenas {
             typeHandleLock = new object();
         }
 
-        private static ArenaID Add(Arena arena) {
+        private static void Add(Arena arena) {
+            Add(arena, false);
+        }
+
+        private static void Add(Arena arena, bool hasPreviousEntry) {
+            bool doRemovals = true;
+
             while (true) {
                 var id = ArenaID.NewID();
                 Debug.Assert(id.Value != 0);
+
                 lock (arenasLock) {
+                    if (doRemovals && !finalizedRemovals.IsEmpty) {
+                        // if there are pending removals via finalizer, remove them now
+                        // but only remove a limited number as to not block for too long
+                        for (int i = 0; i < MaxFinalizedRemovalsPerAdd; i++) {
+                            ArenaID removeID;
+                            if (finalizedRemovals.TryDequeue(out removeID)) {
+                                arenas.Remove(removeID);
+                                doRemovals = false;
+                            }
+                            else {
+                                break;
+                            }
+                        }
+                    }
+
                     if (arenas.ContainsKey(id)) {
                         continue;
                     }
-                    arenas[id] = arena;
+
+                    if (hasPreviousEntry) {
+                        var removed = arenas.Remove(arena.id);
+                        Debug.Assert(removed);
+                    }
+                    else {
+                        Debug.Assert(!arenas.ContainsKey(arena.id));
+                    }
+
+                    arenas[id] = new WeakReference<Arena>(arena);
+                    arena.id = id;
+                    break;
                 }
-                return id;
             }
         }
 
-        private static void Remove(ArenaID id) {
-            lock (arenasLock) {
-                arenas.Remove(id);
+        private static void ChangeID(Arena arena) {
+            Add(arena, true);
+        }
+
+        private static void Remove(ArenaID id, bool fromFinalizer) {
+            if (fromFinalizer) {
+                // don't lock in code called from finalizer, instead
+                // add to removals queue which is emptied during Add
+                finalizedRemovals.Enqueue(id);
+            }
+            else {
+                // removal from Dispose (or Clear) method, remove now
+                lock (arenasLock) {
+                    arenas.Remove(id);
+                }
             }
         }
 
@@ -470,11 +525,17 @@ namespace Arenas {
                 return null;
             }
 
+            WeakReference<Arena> aref;
             lock (arenasLock) {
-                Arena arena;
-                if (!arenas.TryGetValue(id, out arena)) {
+                if (!arenas.TryGetValue(id, out aref)) {
                     return null;
                 }
+
+                Arena arena;
+                if (!aref.TryGetTarget(out arena)) {
+                    return null;
+                }
+
                 return arena;
             }
         }
