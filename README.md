@@ -20,9 +20,8 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 - Copy `UnmanagedRef` types to arrays via `ToArray` and `CopyTo`
 - Generic `ArenaList<T>` type for storing lists inside an arena instance
 - Ability to free items via `IntPtr`
-- `UnsafeRef` struct which caches fewer things than `UnmanagedRef` and is much smaller (16 bytes vs 40 bytes for `UnmanagedRef` and 32 bytes for `UnmanagedRef<T>`)
-- `UnsafeRef` struct is blittable and can be stored inside arenas (see samples)
-- `UnsafeRef.Value` functions the same as `UnmanagedRef.Value` and is safe, the unsafe part of the name comes from the fact that it looks up its arena reference and type through pointer manipulation in the heap, but stale reference detection still works as expected
+- `UnmanagedRef` is a lightweight struct (only 16 bytes in size) but will cache element counts (always for 7 or fewer elements, and for 32k or fewer elements until item versions exceed 32k)
+- `UnmanagedRef` is blittable and can itself be stored inside arenas (see samples)
 
 ## Samples
 
@@ -40,6 +39,8 @@ using (var arena = new Arena()) {
     var jack = arena.Allocate(new Person());
     jack.Value->FirstName = "Jack";
     jack.Value->LastName = "Black";
+
+    Console.WriteLine($"Size of UnmanagedRef: {Marshal.SizeOf(john)}");
 
     Console.WriteLine(john);
     Console.WriteLine(jack);
@@ -137,6 +138,8 @@ Zero-allocation string splitting via arenas (requires .NET Core):
 class Program {
     unsafe static void Main(string[] args) {
         using (var arena = new Arena()) {
+            Console.WriteLine($"Original string: {sourceText}");
+
             // contrived example to split a string into words using an arena
             // in order to avoid allocations
             var words = new ArenaList<Word>(arena);
@@ -167,6 +170,7 @@ class Program {
 
             addWord();
 
+            Console.Write("Split string: ");
             foreach (var word in words) {
                 var s = new Span<char>(word.Data, word.Length);
                 foreach (var c in s) {

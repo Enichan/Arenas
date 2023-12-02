@@ -5,29 +5,75 @@ using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Arenas {
+    // Bit packing layout. For more information see RefVersion.cs
+    // 
+    // Bit index:  1111111111111111 0000000000000000
+    //             FEDCBA9876543210 FEDCBA9876543210
+    // 
+    // Bit layout: VIIIIIIIIIIIIIII IIIIIIIIIIIIIIIL
+    //             VEEEEEEEEEEEEEEE IIIIIIIIIIIIIIIS
+    //         
+    // V = item version valid bit (valid if set)
+    // E = element count (0 bits long, 15 bits short)
+    // I = item version (30 bits long, 15 bits short)
+    // L = long version (lowest bit set)
+    // S = short version (lowest bit unset)
     [StructLayout(LayoutKind.Sequential)]
     public readonly struct ItemVersion : IEquatable<ItemVersion> {
+        private const int validBit = unchecked((int)0x80000000); // -2147483648
+        private const int versionBitIndex = 1;
+        private const int maxShortVersion = 0x7FFF;
+        private const int shortVersionMask = maxShortVersion << versionBitIndex;
+        private const int maxVersion = 0x3FFFFFFF;
+        private const int longVersionMask = maxVersion << versionBitIndex;
+        private const int maxElementCount = 0x7FFF;
+        private const int elementCountBitIndex = versionBitIndex + 15;
+        private const int elementCountMask = maxElementCount << elementCountBitIndex;
+
         private readonly int rawValue;
 
-        public ItemVersion(int version, bool valid) {
-            Debug.Assert((version & -2147483648) == 0);
-            if (valid) {
-                version |= -2147483648;
+        public ItemVersion(int rawValue) {
+            this.rawValue = rawValue;
+        }
+
+        public ItemVersion(bool isShort, int version, int elementCount, bool valid) {
+            int value;
+
+            if (isShort) {
+                Debug.Assert((version & (~maxShortVersion)) == 0);
+                Debug.Assert((elementCount & (~maxElementCount)) == 0);
+                value = (version << versionBitIndex) | (elementCount << elementCountBitIndex);
             }
-            rawValue = version;
+            else {
+                Debug.Assert((version & (~maxVersion)) == 0);
+                value = (version << versionBitIndex) | 1;
+            }
+
+            if (valid) {
+                value |= validBit;
+            }
+
+            rawValue = value;
         }
 
         public ItemVersion Invalidate() {
-            return new ItemVersion(Version, false);
+            return new ItemVersion(IsShortVersion, Version, ElementCount, false);
         }
 
-        public ItemVersion Increment(bool valid) {
-            var newVersion = Version + 1;
-            newVersion &= 0x7FFFFFFF;
+        public ItemVersion Increment(bool valid, int elementCount) {
+            int newVersion = Version + 1;
+            bool isShort = IsShortVersion && newVersion <= maxShortVersion;
+
+            newVersion &= maxVersion;
             if (newVersion == 0) {
                 newVersion = 1;
             }
-            return new ItemVersion(newVersion, valid);
+
+            if (!isShort || elementCount < 0 || elementCount > maxElementCount) {
+                elementCount = 0;
+            }
+
+            return new ItemVersion(isShort, newVersion, elementCount, valid);
         }
 
         #region Equality
@@ -54,10 +100,14 @@ namespace Arenas {
         #endregion
 
         public override string ToString() {
-            return !Valid ? $"{Version:x} (invalid)" : $"{Version}";
+            var v = Version;
+            return !Valid ? $"{v:x} (invalid)" : $"{v}";
         }
 
-        public int Version { get { return rawValue & 0x7FFFFFFF; } }
-        public bool Valid { get { return (rawValue & -2147483648) != 0; } }
+        public int ElementCount { get { return IsShortVersion ? (rawValue & elementCountMask) >> elementCountBitIndex : 0; } }
+        public int Version { get { return (IsShortVersion ? rawValue & shortVersionMask : rawValue & longVersionMask) >> versionBitIndex; } }
+        public bool Valid { get { return (rawValue & validBit) != 0; } }
+        public bool HasElementCount { get { return IsShortVersion && (rawValue & elementCountMask) != 0; } }
+        public bool IsShortVersion { get { return (rawValue & 1) == 0; } }
     }
 }

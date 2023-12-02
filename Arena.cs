@@ -50,7 +50,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr<T>(IntPtr) did not point to a valid item.");
             }
 
-            return new UnmanagedRef<T>((T*)ptr, this, version, header.Size / sizeof(T));
+            return new UnmanagedRef<T>((T*)ptr, version, header.Size / sizeof(T));
         }
 
         public UnmanagedRef UnmanagedRefFromPtr(IntPtr ptr) {
@@ -70,7 +70,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr(IntPtr) did not point to a valid item.");
             }
 
-            return new UnmanagedRef(type, ptr, this, version, header.Size / Marshal.SizeOf(type));
+            return new UnmanagedRef(ptr, version, header.Size / Marshal.SizeOf(type));
         }
 
         private Page AllocPage(int size) {
@@ -112,6 +112,7 @@ namespace Arenas {
             Debug.Assert(sizeBytes <= int.MaxValue);
 
             var iSizeBytes = (int)sizeBytes;
+            var elementCount = iSizeBytes / Marshal.SizeOf(type);
 
             // check if there is a freelist for this type and attempt to get an item from it
             Freelist freelist;
@@ -121,7 +122,7 @@ namespace Arenas {
 
                 // increment item version by 1 and set header
                 var prevVersion = ItemHeader.GetVersion(ptr);
-                version = prevVersion.IncrementItemVersion(true).SetArenaID(id);
+                version = prevVersion.IncrementItemVersion(true, elementCount).SetArenaID(id);
                 ItemHeader.SetHeader(ptr, new ItemHeader(GetTypeHandle(type), iSizeBytes, IntPtr.Zero, version)); // set header
             }
             else {
@@ -129,7 +130,7 @@ namespace Arenas {
 
                 // increment item version by 1
                 var prevVersion = ItemHeader.GetVersion(ptr);
-                version = prevVersion.IncrementItemVersion(true).SetArenaID(id);
+                version = prevVersion.IncrementItemVersion(true, elementCount).SetArenaID(id);
                 ItemHeader.SetVersion(ptr, version);
                 ItemHeader.SetTypeHandle(ptr, GetTypeHandle(type));
             }
@@ -208,7 +209,7 @@ namespace Arenas {
             count = (int)sizeBytes / sizeof(T);
 
             // return pointer as an UnmanagedRef
-            return new UnmanagedRef<T>((T*)ptr, this, version, count);
+            return new UnmanagedRef<T>((T*)ptr, version, count);
         }
 
         private IntPtr Push(int size) {
@@ -239,7 +240,7 @@ namespace Arenas {
         }
 
         public void Free<T>(in T items) where T : struct, IUnmanagedRef {
-            Free(items.ToUnmanaged());
+            Free(items.Reference);
         }
 
         public void Free(in UnmanagedRef items) {
@@ -251,10 +252,11 @@ namespace Arenas {
 
             enumVersion++;
 
-            var free = ArenaContentsHelper.GetFreeDelegate(items.Type);
-            var elementSize = Marshal.SizeOf(items.Type);
+            var type = items.Type;
+            var free = ArenaContentsHelper.GetFreeDelegate(type);
+            var elementSize = Marshal.SizeOf(type);
 
-            if (typeof(IArenaContents).IsAssignableFrom(items.Type)) {
+            if (typeof(IArenaContents).IsAssignableFrom(type)) {
                 for (int i = 0; i < items.ElementCount; i++) {
                     // free contents
                     free(cur);
@@ -421,6 +423,20 @@ namespace Arenas {
             }
         }
 
+        #region IEnumerable
+        public Enumerator GetEnumerator() {
+            return new Enumerator(this);
+        }
+
+        IEnumerator<UnmanagedRef> IEnumerable<UnmanagedRef>.GetEnumerator() {
+            return GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() {
+            return GetEnumerator();
+        }
+        #endregion
+
         #region IDisposable
         protected virtual void Dispose(bool disposing) {
             if (!disposedValue) {
@@ -449,20 +465,6 @@ namespace Arenas {
             // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
-        }
-        #endregion
-
-        #region IEnumerable
-        public Enumerator GetEnumerator() {
-            return new Enumerator(this);
-        }
-
-        IEnumerator<UnmanagedRef> IEnumerable<UnmanagedRef>.GetEnumerator() {
-            return GetEnumerator();
-        }
-
-        IEnumerator IEnumerable.GetEnumerator() {
-            return GetEnumerator();
         }
         #endregion
 
@@ -830,6 +832,9 @@ namespace Arenas {
             }
 
             public static int GetSize(IntPtr item) {
+                if (item == IntPtr.Zero) {
+                    return 0;
+                }
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 return header->Size;
             }
