@@ -21,7 +21,7 @@ namespace ArenasTest {
                 jack.Value->FirstName = "Jack";
                 jack.Value->LastName = "Black";
 
-                Console.WriteLine($"Size of UnmanagedRef: {Marshal.SizeOf(john)}");
+                Console.WriteLine($"Size of UnmanagedRef: {sizeof(UnmanagedRef)}");
 
                 Console.WriteLine(john);
                 Console.WriteLine(jack);

@@ -6,10 +6,12 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using static Arenas.TypeHandle;
+using static Arenas.TypeInfo;
 
 namespace Arenas {
     // NOTE: all items allocated to the arena will be aligned to a 64-bit word boundary and their size will be a multiple of 64-bits
-    unsafe public class Arena : IDisposable, IEnumerable<UnmanagedRef> {
+    public unsafe class Arena : IDisposable, IEnumerable<UnmanagedRef> {
         public const int PageSize = 4096;
 
         private Dictionary<object, ObjectEntry> objToPtr;
@@ -63,8 +65,8 @@ namespace Arenas {
 
             var header = ItemHeader.GetHeader(ptr);
 
-            Type type;
-            if (!TryGetTypeFromHandle(header.TypeHandle, out type)) {
+            TypeInfo info;
+            if (!TryGetTypeInfo(header.TypeHandle, out info)) {
                 throw new InvalidOperationException("Invalid type in header for pointer in UnmanagedRefFromPtr(IntPtr), address may be invalid.");
             }
 
@@ -73,7 +75,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr(IntPtr) did not point to a valid item.");
             }
 
-            return new UnmanagedRef(ptr, version, header.Size / Marshal.SizeOf(type));
+            return new UnmanagedRef(ptr, version, header.Size / info.Size);
         }
 
         private Page AllocPage(int size) {
@@ -107,7 +109,7 @@ namespace Arenas {
             return page;
         }
 
-        private IntPtr Allocate(Type type, ulong sizeBytes, out RefVersion version) {
+        private IntPtr Allocate(Type type, int elementSize, ulong sizeBytes, out RefVersion version) {
             IntPtr ptr;
 
             Debug.Assert(sizeBytes >= sizeof(ulong));
@@ -115,7 +117,7 @@ namespace Arenas {
             Debug.Assert(sizeBytes <= int.MaxValue);
 
             var iSizeBytes = (int)sizeBytes;
-            var elementCount = iSizeBytes / Marshal.SizeOf(type);
+            var elementCount = iSizeBytes / elementSize;
 
             // check if there is a freelist for this type and attempt to get an item from it
             Freelist freelist;
@@ -142,16 +144,18 @@ namespace Arenas {
         }
 
         public UnmanagedRef<T> Allocate<T>(T item) where T : unmanaged {
+            var info = GenerateTypeInfo<T>();
             var items = AllocCount<T>(1);
             items.Value[0] = item;
-            ArenaContentsHelper.SetArenaID(items.Value, id);
+            info.TrySetArenaID((IntPtr)items.Value, id);
             return items;
         }
 
         public UnmanagedRef<T> Allocate<T>(ref T item) where T : unmanaged {
+            var info = GenerateTypeInfo<T>();
             var items = AllocCount<T>(1);
             items.Value[0] = item;
-            ArenaContentsHelper.SetArenaID(items.Value, id);
+            info.TrySetArenaID((IntPtr)items.Value, id);
             return items;
         }
 
@@ -160,6 +164,7 @@ namespace Arenas {
                 throw new ArgumentOutOfRangeException(nameof(count));
             }
 
+            var info = GenerateTypeInfo<T>();
             var items = _AllocValues<T>(count);
 
             if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
@@ -168,7 +173,7 @@ namespace Arenas {
 
                 for (int i = 0; i < elementCount; i++, cur++) {
                     // set arena ID
-                    ArenaContentsHelper.SetArenaID(cur, id);
+                    info.TrySetArenaID((IntPtr)cur, id);
                 }
             }
 
@@ -205,7 +210,7 @@ namespace Arenas {
 
             // allocate items and zero memory
             RefVersion version;
-            var ptr = Allocate(type, sizeBytes, out version);
+            var ptr = Allocate(type, sizeof(T), sizeBytes, out version);
             ZeroMemory(ptr, (UIntPtr)sizeBytes);
 
             Debug.Assert(((ulong)ptr % sizeof(ulong)) == 0);
@@ -259,14 +264,14 @@ namespace Arenas {
             enumVersion++;
 
             var type = items.Type;
-            var free = ArenaContentsHelper.GetFreeDelegate(type);
-            var elementSize = Marshal.SizeOf(type);
+            var info = GetTypeInfo(type);
+            var elementSize = info.Size;
 
             if (typeof(IArenaContents).IsAssignableFrom(type)) {
                 var elementCount = items.ElementCount;
                 for (int i = 0; i < elementCount; i++) {
                     // free contents
-                    free(cur);
+                    info.TryFree(cur);
                     cur += elementSize;
                 }
             }
@@ -282,12 +287,13 @@ namespace Arenas {
             }
 
             enumVersion++;
+            var info = GetTypeInfo(typeof(T));
 
             if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
                 var elementCount = items.ElementCount;
                 for (int i = 0; i < elementCount; i++, cur++) {
                     // free contents
-                    ArenaContentsHelper.Free(cur);
+                    info.TryFree((IntPtr)cur);
                 }
             }
 
@@ -489,9 +495,6 @@ namespace Arenas {
         private static ConcurrentQueue<ArenaID> finalizedRemovals;
         private static Dictionary<ArenaID, WeakReference<Arena>> arenas;
         private static object arenasLock;
-        private static Dictionary<Type, TypeHandle> typeToHandle;
-        private static Dictionary<TypeHandle, Type> handleToType;
-        private static object typeHandleLock;
         private static ZeroMemoryDelegate ZeroMemory;
         private static readonly int itemHeaderSize;
 
@@ -511,10 +514,6 @@ namespace Arenas {
             finalizedRemovals = new ConcurrentQueue<ArenaID>();
             arenas = new Dictionary<ArenaID, WeakReference<Arena>>();
             arenasLock = new object();
-
-            typeToHandle = new Dictionary<Type, TypeHandle>();
-            handleToType = new Dictionary<TypeHandle, Type>();
-            typeHandleLock = new object();
         }
 
         private static void Add(Arena arena) {
@@ -600,48 +599,6 @@ namespace Arenas {
 
                 return arena;
             }
-        }
-
-        internal static TypeHandle GetTypeHandle(Type type) {
-            TypeHandle handle;
-            lock (typeHandleLock) {
-                if (!typeToHandle.TryGetValue(type, out handle)) {
-                    typeToHandle[type] = handle = new TypeHandle(typeToHandle.Count + 1);
-                    if (handle.Value == 0) {
-                        throw new OverflowException("Arena.TypeHandle value overflow: too many types");
-                    }
-                    handleToType[handle] = type;
-                }
-            }
-            return handle;
-        }
-
-        internal static Type GetTypeFromHandle(TypeHandle handle) {
-            if (handle.Value == 0) {
-                return typeof(Exception);
-            }
-
-            Type type;
-            lock (typeHandleLock) {
-                if (!handleToType.TryGetValue(handle, out type)) {
-                    return typeof(Exception);
-                }
-            }
-            return type;
-        }
-
-        internal static bool TryGetTypeFromHandle(TypeHandle handle, out Type type) {
-            type = null;
-            if (handle.Value == 0) {
-                return false;
-            }
-
-            lock (typeHandleLock) {
-                if (!handleToType.TryGetValue(handle, out type)) {
-                    return false;
-                }
-            }
-            return true;
         }
 
         // http://graphics.stanford.edu/%7Eseander/bithacks.html#RoundUpPowerOf2
@@ -893,40 +850,6 @@ namespace Arenas {
                 }
                 var header = (ItemHeader*)(item - sizeof(ItemHeader));
                 return header->Version.Arena;
-            }
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        internal readonly struct TypeHandle : IEquatable<TypeHandle> {
-            public readonly int Value;
-
-            public TypeHandle(int value) {
-                Value = value;
-            }
-
-            public override bool Equals(object obj) {
-                return obj is TypeHandle handle &&
-                       Value == handle.Value;
-            }
-
-            public bool Equals(TypeHandle other) {
-                return Value == other.Value;
-            }
-
-            public override int GetHashCode() {
-                return 1909215196 + Value.GetHashCode();
-            }
-
-            public static bool operator ==(TypeHandle left, TypeHandle right) {
-                return left.Equals(right);
-            }
-
-            public static bool operator !=(TypeHandle left, TypeHandle right) {
-                return !(left == right);
-            }
-
-            public override string ToString() {
-                return GetTypeFromHandle(this).ToString();
             }
         }
 

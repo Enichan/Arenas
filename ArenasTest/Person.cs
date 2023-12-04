@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Arenas {
@@ -7,12 +8,6 @@ namespace Arenas {
         private ArenaID arenaID;
         private ManagedRef firstName;
         private ManagedRef lastName;
-
-        void IArenaContents.Free() {
-            // free managed references by setting to null
-            FirstName = null; 
-            LastName = null;
-        }
 
         public override string ToString() {
             return $"{FirstName} {LastName}";
@@ -27,6 +22,19 @@ namespace Arenas {
             set { lastName = lastName.Set(Arena.Get(arenaID), value); }
         }
 
-        void IArenaContents.SetArenaID(ArenaID value) { arenaID = value; }
+        public class ArenaContentsMethods : ArenaContentsMethodsBase<Person, ArenaContentsMethods> {
+            public override void Free(Person* self) {
+                self->FirstName = null;
+                self->LastName = null;
+            }
+
+            public override void SetArenaID(Person* self, ArenaID id) {
+                self->arenaID = id;
+            }
+        }
+
+        IArenaContentsMethodProvider IArenaContents.ArenaContentsMethods { 
+            get => ArenaContentsMethodsBase<ArenaContentsMethods>.MethodProviderInstance; 
+        }
     }
 }
