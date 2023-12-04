@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
+using static Arenas.TypeHandle;
 
 namespace Arenas {
     public unsafe class TypeInfo {
         public Type Type { get; private set; }
+        public TypeHandle Handle { get; private set; }
         public int Size { get; private set; }
         public IArenaContentsMethodProvider ArenaContentsMethods { get; private set; }
 
@@ -14,8 +16,9 @@ namespace Arenas {
         private Func<IntPtr, int> getHashCodeFunc;
         private Func<IntPtr, object> ptrToStructFunc;
 
-        internal TypeInfo(Type type, int size, Func<IntPtr, string> toStringFunc, Func<IntPtr, int> getHashCodeFunc, Func<IntPtr, object> ptrToStructFunc) {
+        internal TypeInfo(Type type, TypeHandle handle, int size, Func<IntPtr, string> toStringFunc, Func<IntPtr, int> getHashCodeFunc, Func<IntPtr, object> ptrToStructFunc) {
             Type = type;
+            Handle = handle;
             Size = size;
             this.toStringFunc = toStringFunc;
             this.getHashCodeFunc = getHashCodeFunc;
@@ -44,6 +47,10 @@ namespace Arenas {
             if (ArenaContentsMethods == null) return false;
             ArenaContentsMethods.SetArenaID(instance, id);
             return true;
+        }
+
+        public override string ToString() {
+            return $"TypeInfo({Type})";
         }
 
         #region Static
@@ -80,21 +87,22 @@ namespace Arenas {
 
             lock (typeLock) {
                 if (!typeToInfo.TryGetValue(type, out info)) {
-                    info = new TypeInfo(type, sizeof(T), ToStringFromPtr<T>, GetHashCodeFromPtr<T>, CloneFromPtr<T>);
+                    info = new TypeInfo(type, GetTypeHandle(type), sizeof(T), 
+                        ToStringFromPtr<T>, GetHashCodeFromPtr<T>, CloneFromPtr<T>);
                     
                     if (typeof(IArenaContents).IsAssignableFrom(type)) {
                         // this will allocate (but only once per type) on .NET Framework but because of
                         // the `is IArenaContents` followed by the cast and usage of property should be
                         // picked up by the JIT as a struct of type IArenaContents and so shouldn't
                         // allocate on .NET Core at all 🤞
-                        var inst = new T();
+                        var inst = default(T);
                         if (inst is IArenaContents) {
                             info.ArenaContentsMethods = ((IArenaContents)inst).ArenaContentsMethods;
                         }
                     }
 
                     typeToInfo[type] = info;
-                    handleToInfo[TypeHandle.GetTypeHandle(typeof(T))] = info;
+                    handleToInfo[GetTypeHandle(typeof(T))] = info;
                 }
             }
 

@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 
 namespace Arenas {
     public interface IArenaContents {
+        void Free();
+        void SetArenaID(ArenaID id);
         IArenaContentsMethodProvider ArenaContentsMethods { get; }
     }
 
@@ -13,17 +15,14 @@ namespace Arenas {
         void SetArenaID(IntPtr ptr, ArenaID id);
     }
 
-    public unsafe abstract class ArenaContentsMethodsBase<TValue, TSelf> : ArenaContentsMethodsBase<TSelf>, IArenaContentsMethodProvider where TValue : unmanaged where TSelf : class, IArenaContentsMethodProvider, new() {
+    public unsafe abstract class ArenaContentsMethodsBase<TValue, TSelf> : ArenaContentsMethodsBase<TSelf>, IArenaContentsMethodProvider where TValue : unmanaged, IArenaContents where TSelf : class, IArenaContentsMethodProvider, new() {
         public void Free(IntPtr ptr) {
-            Free((TValue*)ptr);
+            ((TValue*)ptr)->Free();
         }
 
         public void SetArenaID(IntPtr ptr, ArenaID id) {
-            SetArenaID((TValue*)ptr, id);
+            ((TValue*)ptr)->SetArenaID(id);
         }
-
-        public abstract void Free(TValue* self);
-        public abstract void SetArenaID(TValue* self, ArenaID id);
     }
 
     public abstract class ArenaContentsMethodsBase<TSelf> where TSelf : class, IArenaContentsMethodProvider, new() {

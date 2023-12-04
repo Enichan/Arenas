@@ -44,7 +44,7 @@ namespace ArenasTest {
 
                 // free an item
                 arena.Free(jack);
-
+                
                 Console.WriteLine("Items in arena after freeing:");
                 foreach (var item in arena) {
                     Console.WriteLine(item);
