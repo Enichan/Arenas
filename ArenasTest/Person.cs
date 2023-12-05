@@ -16,7 +16,7 @@ namespace Arenas {
             return $"{FirstName} {LastName}";
         }
 
-        void IArenaContents.Free() {
+        public void Free() {
             // free managed references by setting to null
             FirstName = null;
             LastName = null;

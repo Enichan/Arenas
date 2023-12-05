@@ -18,8 +18,8 @@ using System.Threading.Tasks;
 //    Because of this arenas can take an unmanaged struct T, detect if it implements IArenaContents,
 //    request the cached version of ArenaMethods<T>, and pass a pointer to the struct in order to
 //    perform necessary operations on the struct without boxing and without reflection.
-// 5. User code should not be going around calling Free or manipulating the ArenaID of arena-bound
-//    structs so both should be implemented explicitly to avoid being used by user code.
+// 5. User code should not be going around manipulating the ArenaID of arena-bound structs so this
+//    property should be implemented explicitly to avoid being used by user code.
 // 6. But if the ArenaID property is explicit it's also hidden from the struct's code which means it
 //    can't interact with the arena it's in. This is solved via IArenaContentsExtensions.GetArena
 //    which indirectly allows the struct to retrieve its own arena.
