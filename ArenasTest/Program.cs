@@ -83,6 +83,10 @@ namespace ArenasTest {
             Console.WriteLine();
             Console.WriteLine("Running unmanaged list of pointers code");
             UnmanagedPtrList();
+
+            Console.WriteLine();
+            Console.WriteLine("Running arenas in arenas");
+            ArenaArenas();
         }
 
         static unsafe void UnmanagedPtrList() {
@@ -108,6 +112,27 @@ namespace ArenasTest {
                     var person = item.As<Person>();
                     Console.WriteLine(*person);
                 }
+            }
+        }
+
+        private static Arena parentArena = new Arena();
+        private static unsafe IntPtr ChildAlloc(int sizeBytes) => (IntPtr)parentArena.AllocCount<byte>(sizeBytes).Value;
+        private static unsafe void ChildFree(IntPtr ptr) => parentArena.Free(ptr);
+
+        static unsafe void ArenaArenas() {
+            using (var childArena = new Arena(ChildAlloc, ChildFree)) {
+                var john = childArena.Allocate(new Person());
+                john.Value->FirstName = "John";
+                john.Value->LastName = "Doe";
+
+                var jack = childArena.Allocate(new Person());
+                jack.Value->FirstName = "Jack";
+                jack.Value->LastName = "Black";
+
+                Console.WriteLine("Child arena:");
+                foreach (var item in childArena) Console.WriteLine(item);
+                Console.WriteLine("Parent arena:");
+                foreach (var item in parentArena) Console.WriteLine(item);
             }
         }
     }
