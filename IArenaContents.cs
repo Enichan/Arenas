@@ -27,7 +27,7 @@ using System.Threading.Tasks;
 // This leads to only two lines of boilerplate:
 //
 // ArenaID IArenaContents.ArenaID { get; set; }
-// IArenaMethods IArenaContents.ArenaMethods { get => new ArenaMethods<T>(); }
+// IArenaMethods IArenaContents.ArenaMethods { get => ArenaMethods<T>.Instance; }
 //
 // Where T should be altered to the type of the containing struct.
 namespace Arenas {
@@ -42,7 +42,7 @@ namespace Arenas {
         void SetArenaID(IntPtr ptr, ArenaID id);
     }
 
-    public unsafe class ArenaMethods<T> : IArenaMethods where T : unmanaged, IArenaContents {
+    public unsafe sealed class ArenaMethods<T> : IArenaMethods where T : unmanaged, IArenaContents {
         public void Free(IntPtr ptr) {
             ((T*)ptr)->Free();
         }
@@ -50,6 +50,9 @@ namespace Arenas {
         public void SetArenaID(IntPtr ptr, ArenaID id) {
             ((T*)ptr)->ArenaID = id;
         }
+
+        private static readonly ArenaMethods<T> inst = new ArenaMethods<T>();
+        public static ArenaMethods<T> Instance { get { return inst; } }
     }
 
     public static class IArenaContentsExtensions {

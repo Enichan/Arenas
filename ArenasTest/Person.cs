@@ -7,7 +7,7 @@ namespace Arenas {
     unsafe public struct Person : IArenaContents {
         // these two lines are boilerplate for IArenaContents structs
         ArenaID IArenaContents.ArenaID { get; set; }
-        IArenaMethods IArenaContents.ArenaMethods { get => new ArenaMethods<Person>(); }
+        IArenaMethods IArenaContents.ArenaMethods { get => ArenaMethods<Person>.Instance; }
 
         private ManagedRef firstName;
         private ManagedRef lastName;
