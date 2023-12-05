@@ -5,10 +5,10 @@ using System.Runtime.InteropServices;
 namespace Arenas {
     [StructLayout(LayoutKind.Sequential)]
     unsafe public struct Person : IArenaContents {
-        // this boilerplate requires changing one generic type from struct to struct
-        public class ArenaContentsMethods : ArenaContentsMethodsBase<Person, ArenaContentsMethods> { }
+        // these two lines are boilerplate for IArenaContents structs
+        ArenaID IArenaContents.ArenaID { get; set; }
+        IArenaMethods IArenaContents.ArenaMethods { get => new ArenaMethods<Person>(); }
 
-        private ArenaID arenaID;
         private ManagedRef firstName;
         private ManagedRef lastName;
 
@@ -24,17 +24,11 @@ namespace Arenas {
 
         public string FirstName {
             get { return firstName.Get<string>(); }
-            set { firstName = firstName.Set(Arena.Get(arenaID), value); }
+            set { firstName = firstName.Set(ref this, value); }
         }
         public string LastName {
             get { return lastName.Get<string>(); }
-            set { lastName = lastName.Set(Arena.Get(arenaID), value); }
-        }
-
-        // boilerplate, this all stays identical from struct to struct
-        void IArenaContents.SetArenaID(ArenaID id) { arenaID = id; }
-        IArenaContentsMethodProvider IArenaContents.ArenaContentsMethods { 
-            get => ArenaContentsMethodsBase<ArenaContentsMethods>.MethodProviderInstance; 
+            set { lastName = lastName.Set(ref this, value); }
         }
     }
 }

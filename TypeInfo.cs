@@ -10,7 +10,7 @@ namespace Arenas {
         public Type Type { get; private set; }
         public TypeHandle Handle { get; private set; }
         public int Size { get; private set; }
-        public IArenaContentsMethodProvider ArenaContentsMethods { get; private set; }
+        public IArenaMethods ArenaContentsMethods { get; private set; }
 
         private Func<IntPtr, string> toStringFunc;
         private Func<IntPtr, int> getHashCodeFunc;
@@ -91,13 +91,9 @@ namespace Arenas {
                         ToStringFromPtr<T>, GetHashCodeFromPtr<T>, CloneFromPtr<T>);
                     
                     if (typeof(IArenaContents).IsAssignableFrom(type)) {
-                        // this will allocate (but only once per type) on .NET Framework but because of
-                        // the `is IArenaContents` followed by the cast and usage of property should be
-                        // picked up by the JIT as a struct of type IArenaContents and so shouldn't
-                        // allocate on .NET Core at all 🤞
                         var inst = default(T);
                         if (inst is IArenaContents) {
-                            info.ArenaContentsMethods = ((IArenaContents)inst).ArenaContentsMethods;
+                            info.ArenaContentsMethods = ((IArenaContents)inst).ArenaMethods;
                         }
                     }
 
