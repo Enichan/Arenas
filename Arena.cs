@@ -506,8 +506,9 @@ namespace Arenas {
         private static object arenasLock;
         private static ZeroMemoryDelegate ZeroMemory;
         private static readonly int itemHeaderSize;
-        private static readonly AllocMemoryDelegate DefaultAllocMemory;
-        private static readonly FreeMemoryDelegate DefaultFreeMemory;
+
+        public static AllocMemoryDelegate DefaultAllocMemory { get; set; }
+        public static FreeMemoryDelegate DefaultFreeMemory { get; set; }
 
         static Arena() {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
