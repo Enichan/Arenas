@@ -25,13 +25,17 @@ namespace Arenas {
         private int enumVersion;
         private bool initialized;
 
-        public Arena() {
+        public Arena()
+            : this(DefaultAllocMemory, DefaultFreeMemory) {
+        }
+
+        public Arena(AllocMemoryDelegate allocMem, FreeMemoryDelegate freeMem) {
             objToPtr = new Dictionary<object, ObjectEntry>(ObjectReferenceEqualityComparer.Instance);
             pages = new List<Page>();
             freelists = new Dictionary<int, Freelist>();
 
-            AllocMemory = DefaultAllocMemory;
-            FreeMemory = DefaultFreeMemory;
+            AllocMemory = allocMem ?? throw new ArgumentNullException(nameof(allocMem));
+            FreeMemory = freeMem ?? throw new ArgumentNullException(nameof(freeMem));
 
             // call clear to set up everything we need for use
             Clear(false);
@@ -491,8 +495,8 @@ namespace Arenas {
 
         public bool IsDisposed { get { return disposedValue; } }
         public ArenaID ID { get { return id; } }
-        public AllocMemoryDelegate AllocMemory { get; set; }
-        public FreeMemoryDelegate FreeMemory { get; set; }
+        public AllocMemoryDelegate AllocMemory { get; }
+        public FreeMemoryDelegate FreeMemory { get; }
 
         #region Static
         private const int MaxFinalizedRemovalsPerAdd = 8;
