@@ -10,6 +10,9 @@ using static Arenas.TypeHandle;
 using static Arenas.TypeInfo;
 
 namespace Arenas {
+    public delegate IntPtr AllocMemoryDelegate(int sizeBytes);
+    public delegate void FreeMemoryDelegate(IntPtr ptr);
+
     // NOTE: all items allocated to the arena will be aligned to a 64-bit word boundary and their size will be a multiple of 64-bits
     public unsafe class Arena : IDisposable, IEnumerable<UnmanagedRef> {
         public const int PageSize = 4096;
@@ -26,6 +29,9 @@ namespace Arenas {
             objToPtr = new Dictionary<object, ObjectEntry>(ObjectReferenceEqualityComparer.Instance);
             pages = new List<Page>();
             freelists = new Dictionary<int, Freelist>();
+
+            AllocMemory = DefaultAllocMemory;
+            FreeMemory = DefaultFreeMemory;
 
             // call clear to set up everything we need for use
             Clear(false);
@@ -83,9 +89,9 @@ namespace Arenas {
             // while keeping the original size (unused space is available if already aligned)
             size += sizeof(ulong);
             size = Page.AlignCeil(size, PageSize);
-            
+
             // allocate pointer, potentially unaligned to 64-bit word
-            var mem = Marshal.AllocHGlobal(size);
+            var mem = (AllocMemory ?? DefaultAllocMemory)(size);
             ZeroMemory(mem, (UIntPtr)size);
 
             // store the original pointer for freeing, and find 64-bit word align position
@@ -409,8 +415,9 @@ namespace Arenas {
             }
 
             // free page memory
+            var freeMem = FreeMemory ?? DefaultFreeMemory;
             foreach (var page in pages) {
-                page.Free();
+                page.Free(freeMem);
             }
 
             pages.Clear();
@@ -484,6 +491,8 @@ namespace Arenas {
 
         public bool IsDisposed { get { return disposedValue; } }
         public ArenaID ID { get { return id; } }
+        public AllocMemoryDelegate AllocMemory { get; set; }
+        public FreeMemoryDelegate FreeMemory { get; set; }
 
         #region Static
         private const int MaxFinalizedRemovalsPerAdd = 8;
@@ -497,6 +506,8 @@ namespace Arenas {
         private static object arenasLock;
         private static ZeroMemoryDelegate ZeroMemory;
         private static readonly int itemHeaderSize;
+        private static readonly AllocMemoryDelegate DefaultAllocMemory;
+        private static readonly FreeMemoryDelegate DefaultFreeMemory;
 
         static Arena() {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
@@ -505,7 +516,7 @@ namespace Arenas {
             else {
                 ZeroMemory = ZeroMemPlatformIndependent;
             }
-
+            
             // item header size must be 64-bit word aligned to keep 64-bit word alignment for all items
             // allocated to the arena
             itemHeaderSize = Page.AlignCeil(sizeof(ItemHeader), sizeof(ulong));
@@ -514,6 +525,9 @@ namespace Arenas {
             finalizedRemovals = new ConcurrentQueue<ArenaID>();
             arenas = new Dictionary<ArenaID, WeakReference<Arena>>();
             arenasLock = new object();
+
+            DefaultAllocMemory = Marshal.AllocHGlobal;
+            DefaultFreeMemory = Marshal.FreeHGlobal;
         }
 
         private static void Add(Arena arena) {
@@ -676,11 +690,11 @@ namespace Arenas {
                 Offset = 0;
             }
 
-            public void Free() {
+            public void Free(FreeMemoryDelegate freeMem) {
                 if (freePtr == IntPtr.Zero) {
                     return;
                 }
-                Marshal.FreeHGlobal(freePtr);
+                freeMem(freePtr);
                 freePtr = IntPtr.Zero;
             }
 
