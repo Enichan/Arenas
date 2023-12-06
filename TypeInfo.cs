@@ -11,6 +11,7 @@ namespace Arenas {
         public TypeHandle Handle { get; private set; }
         public int Size { get; private set; }
         public IArenaMethods ArenaContentsMethods { get; private set; }
+        public bool IsArenaContents { get { return ArenaContentsMethods != null; } }
 
         private Func<IntPtr, string> toStringFunc;
         private Func<IntPtr, int> getHashCodeFunc;
