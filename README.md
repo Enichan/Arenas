@@ -42,7 +42,7 @@ using (var arena = new Arena()) {
     jack.Value->FirstName = "Jack";
     jack.Value->LastName = "Black";
 
-    Console.WriteLine($"Size of UnmanagedRef: {Marshal.SizeOf(john)}");
+    Console.WriteLine($"Size of UnmanagedRef: {sizeof(UnmanagedRef)}");
 
     Console.WriteLine(john);
     Console.WriteLine(jack);
@@ -65,7 +65,7 @@ using (var arena = new Arena()) {
 
     // free an item
     arena.Free(jack);
-
+                
     Console.WriteLine("Items in arena after freeing:");
     foreach (var item in arena) {
         Console.WriteLine(item);
@@ -107,30 +107,31 @@ Create a blittable struct with managed references:
 ```csharp
 [StructLayout(LayoutKind.Sequential)]
 unsafe public struct Person : IArenaContents {
-    private ArenaID arenaID;
+    // these two lines are boilerplate for IArenaContents structs
+    ArenaID IArenaContents.ArenaID { get; set; }
+    IArenaMethods IArenaContents.ArenaMethods { get => ArenaMethods<Person>.Instance; }
+
     private ManagedRef firstName;
     private ManagedRef lastName;
-
-    void IArenaContents.Free() {
-        // free managed references by setting to null
-        FirstName = null; 
-        LastName = null;
-    }
 
     public override string ToString() {
         return $"{FirstName} {LastName}";
     }
 
+    public void Free() {
+        // free managed references by setting to null
+        FirstName = null;
+        LastName = null;
+    }
+
     public string FirstName {
         get { return firstName.Get<string>(); }
-        set { firstName = firstName.Set(Arena.Get(arenaID), value); }
+        set { firstName = firstName.Set(ref this, value); }
     }
     public string LastName {
         get { return lastName.Get<string>(); }
-        set { lastName = lastName.Set(Arena.Get(arenaID), value); }
+        set { lastName = lastName.Set(ref this, value); }
     }
-
-    void IArenaContents.SetArenaID(ArenaID value) { arenaID = value; }
 }
 ```
 
@@ -189,7 +190,7 @@ class Program {
         }
     }
 
-    private static string sourceText = @"Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
+    private static string sourceText = @"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Aliquam sodales elit rutrum iaculis dictum.";
 
     [StructLayout(LayoutKind.Sequential)]
     private unsafe struct Word {
@@ -201,7 +202,7 @@ class Program {
             Data = data;
         }
 
-        public override string ToString() => Data == null || Length <= 0 ? "" : new string(Data, 0, Length);
+        public override string ToString() => Data is null || Length <= 0 ? "" : new string(Data, 0, Length);
     }
 }
 ```
@@ -230,6 +231,41 @@ using (var arena = new Arena()) {
     foreach (var item in people) {
         var person = item.As<Person>();
         Console.WriteLine(*person);
+    }
+}
+```
+
+"yo dawg i herd u liek arena allocators so i put some arena allocators in ur arena allocators":
+
+```csharp
+private static Arena parentArena = new Arena();
+
+private unsafe class ArenaAllocator : IMemoryAllocator {
+    public MemoryAllocation Allocate(int sizeBytes) {
+        var alloc = parentArena.AllocCount<byte>(sizeBytes);
+        return new MemoryAllocation((IntPtr)alloc.Value, alloc.Size);
+    }
+
+    public void Free(IntPtr ptr) => parentArena.Free(ptr);
+}
+
+static unsafe void ArenaArenas() {
+    // by using a page size of 2048 we're actually guaranteeing this allocator
+    // will use pages of ~4k, because the size is rounded to the next power of
+    // two after adding the item header size
+    using (var childArena = new Arena(new ArenaAllocator(), 2048)) {
+        var john = childArena.Allocate(new Person());
+        john.Value->FirstName = "John";
+        john.Value->LastName = "Doe";
+
+        var jack = childArena.Allocate(new Person());
+        jack.Value->FirstName = "Jack";
+        jack.Value->LastName = "Black";
+
+        Console.WriteLine("Child arena:");
+        foreach (var item in childArena) Console.WriteLine(item);
+        Console.WriteLine("Parent arena:");
+        foreach (var item in parentArena) Console.WriteLine(item);
     }
 }
 ```
