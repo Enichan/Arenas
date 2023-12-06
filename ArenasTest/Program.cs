@@ -128,7 +128,7 @@ namespace ArenasTest {
 
         static unsafe void ArenaArenas() {
             // by using a page size of 2048 we're actually guaranteeing this allocator
-            // will uses pages of ~4k, because the size is rounded to the next power of
+            // will use pages of ~4k, because the size is rounded to the next power of
             // two after adding the item header size
             using (var childArena = new Arena(new ArenaAllocator(), 2048)) {
                 var john = childArena.Allocate(new Person());
