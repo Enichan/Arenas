@@ -2,7 +2,7 @@
 
 This is a .NET Standard 2.0 library that provides access to arena allocators along with the ability to use unmanaged references with natural C# syntax and safe-guards, as well as the ability for arena-allocated items to reference managed C# objects.
 
-Use by creating a `new Arena()` and calling `Allocate` with blittable structs or `AllocCount` to allocate arrays of items. Types that implement `IArenaContents` will automatically have `Free` and `SetArenaID` called where appropriate (without boxing.)
+Use by creating a `new Arena()` and calling `Allocate` with blittable structs or `AllocCount` to allocate arrays of items. Types that implement `IArenaContents` will automatically have `Free` called and `ArenaID` set where appropriate (without boxing.)
 
 ## Features
 
@@ -16,13 +16,14 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 - Can enumerate over all entries in the arena
 - Allocate any count of items
 - Allocate generic buffers of any size by allocating using `AllocCount<byte>(sizeInBytes)`
+- Optimal allocations for buffers where the size doesn't matter to the caller through the `AllocRoughly` method (size may be smaller than requested)
 - Debug view will show list of items for `UnmanagedRef` types (handy when inspecting multiple elements)
 - Copy `UnmanagedRef` types to arrays via `ToArray` and `CopyTo`
 - Generic `ArenaList<T>` type for storing lists inside an arena instance
 - Ability to free items via `IntPtr`
 - `UnmanagedRef` is a lightweight struct (only 16 bytes in size) but will cache element counts (always for 7 or fewer elements, and for 32k or fewer elements until item versions exceed 32k)
 - `UnmanagedRef` is blittable and can itself be stored inside arenas (see samples)
-- Set custom memory allocator using `AllocMemory`/`FreeMemory` or set defaults via `DefaultAllocMemory`/`DefaultFreeMemory`
+- Ability to use custom memory allocator for allocating page memory, as well as page size
 
 ## Samples
 
