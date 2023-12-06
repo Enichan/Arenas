@@ -3,14 +3,18 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using static Arenas.TypeHandle;
+using static Arenas.TypeInfo;
 
 namespace Arenas {
     // NOTE: all items allocated to the arena will be aligned to a 64-bit word boundary and their size will be a multiple of 64-bits
-    unsafe public class Arena : IDisposable, IEnumerable<UnmanagedRef> {
-        public const int PageSize = 4096;
+    public unsafe class Arena : IDisposable, IEnumerable<UnmanagedRef> {
+        public const int DefaultPageSize = 4096;
+        public const int MinimumPageSize = 256;
 
         private Dictionary<object, ObjectEntry> objToPtr;
         private bool disposedValue;
@@ -19,11 +23,25 @@ namespace Arenas {
         private ArenaID id;
         private int enumVersion;
         private bool initialized;
+        private int pageSize;
 
-        public Arena() {
+        public Arena(int pageSize = DefaultPageSize)
+            : this(DefaultAllocator, pageSize) {
+        }
+
+        public Arena(IMemoryAllocator allocator, int pageSize = DefaultPageSize) {
+            if (pageSize < MinimumPageSize) {
+                throw new ArgumentOutOfRangeException(nameof(pageSize), $"Arena page size must be greater than or equal to {MinimumPageSize} bytes");
+            }
+            if ((uint)pageSize != NextPowerOfTwo((uint)pageSize)) {
+                throw new ArgumentOutOfRangeException(nameof(pageSize), $"Arena page size must be a power of two");
+            }
+
+            this.pageSize = pageSize;
             objToPtr = new Dictionary<object, ObjectEntry>(ObjectReferenceEqualityComparer.Instance);
             pages = new List<Page>();
             freelists = new Dictionary<int, Freelist>();
+            Allocator = allocator ?? throw new ArgumentNullException(nameof(allocator));
 
             // call clear to set up everything we need for use
             Clear(false);
@@ -63,8 +81,8 @@ namespace Arenas {
 
             var header = ItemHeader.GetHeader(ptr);
 
-            Type type;
-            if (!TryGetTypeFromHandle(header.TypeHandle, out type)) {
+            TypeInfo info;
+            if (!TryGetTypeInfo(header.TypeHandle, out info)) {
                 throw new InvalidOperationException("Invalid type in header for pointer in UnmanagedRefFromPtr(IntPtr), address may be invalid.");
             }
 
@@ -73,18 +91,23 @@ namespace Arenas {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr(IntPtr) did not point to a valid item.");
             }
 
-            return new UnmanagedRef(ptr, version, header.Size / Marshal.SizeOf(type));
+            return new UnmanagedRef(ptr, version, header.Size / info.Size);
         }
 
         private Page AllocPage(int size) {
             // add one 64-bit word in size to make sure this can always be 64-bit aligned
             // while keeping the original size (unused space is available if already aligned)
             size += sizeof(ulong);
-            size = Page.AlignCeil(size, PageSize);
-            
+            size = Page.AlignCeil(size, pageSize);
+
             // allocate pointer, potentially unaligned to 64-bit word
-            var mem = Marshal.AllocHGlobal(size);
-            ZeroMemory(mem, (UIntPtr)size);
+            var alloc = (Allocator ?? DefaultAllocator).Allocate(size);
+            
+            var mem = alloc.Pointer;
+            var actualSize = Page.AlignFloor(alloc.SizeBytes, sizeof(ulong));
+            Debug.Assert(actualSize >= size);
+
+            ZeroMemory(mem, (UIntPtr)alloc.SizeBytes);
 
             // store the original pointer for freeing, and find 64-bit word align position
             var freePtr = mem;
@@ -96,18 +119,18 @@ namespace Arenas {
                 // memory is misaligned, realign and reduce size accordingly
                 var sizeDifference = (int)((ulong)aligned - (ulong)mem);
                 mem = aligned;
-                size -= sizeDifference;
+                actualSize -= sizeDifference;
             }
 
             // create page
-            var page = new Page(freePtr, mem, size);
+            var page = new Page(freePtr, mem, actualSize);
             pages.Add(page);
 
             Debug.Assert(((ulong)page.Address % sizeof(ulong)) == 0);
             return page;
         }
 
-        private IntPtr Allocate(Type type, ulong sizeBytes, out RefVersion version) {
+        private IntPtr Allocate(Type type, int elementSize, ulong sizeBytes, out RefVersion version) {
             IntPtr ptr;
 
             Debug.Assert(sizeBytes >= sizeof(ulong));
@@ -115,7 +138,7 @@ namespace Arenas {
             Debug.Assert(sizeBytes <= int.MaxValue);
 
             var iSizeBytes = (int)sizeBytes;
-            var elementCount = iSizeBytes / Marshal.SizeOf(type);
+            var elementCount = iSizeBytes / elementSize;
 
             // check if there is a freelist for this type and attempt to get an item from it
             Freelist freelist;
@@ -142,16 +165,18 @@ namespace Arenas {
         }
 
         public UnmanagedRef<T> Allocate<T>(T item) where T : unmanaged {
+            var info = GenerateTypeInfo<T>();
             var items = AllocCount<T>(1);
             items.Value[0] = item;
-            ArenaContentsHelper.SetArenaID(items.Value, id);
+            info.TrySetArenaID((IntPtr)items.Value, id);
             return items;
         }
 
         public UnmanagedRef<T> Allocate<T>(ref T item) where T : unmanaged {
+            var info = GenerateTypeInfo<T>();
             var items = AllocCount<T>(1);
             items.Value[0] = item;
-            ArenaContentsHelper.SetArenaID(items.Value, id);
+            info.TrySetArenaID((IntPtr)items.Value, id);
             return items;
         }
 
@@ -160,6 +185,7 @@ namespace Arenas {
                 throw new ArgumentOutOfRangeException(nameof(count));
             }
 
+            var info = GenerateTypeInfo<T>();
             var items = _AllocValues<T>(count);
 
             if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
@@ -168,10 +194,55 @@ namespace Arenas {
 
                 for (int i = 0; i < elementCount; i++, cur++) {
                     // set arena ID
-                    ArenaContentsHelper.SetArenaID(cur, id);
+                    info.TrySetArenaID((IntPtr)cur, id);
                 }
             }
 
+            return items;
+        }
+
+        /// <summary>
+        /// Allocate an approximate amount of bytes. The arena will allocate a number of bytes that may be
+        /// greater or less than the amount requested, and which optimally uses the allocator's memory
+        /// resources for sizes 384 and over. Use this when allocating buffers where you don't care what the
+        /// exact length of the requested buffer is.
+        /// 
+        /// Effectively this method call will round to the nearest power of two, give or take some bytes for
+        /// overhead from allocation headers.
+        /// </summary>
+        /// <param name="sizeBytes">The approximate amount of bytes you're requesting from the arena</param>
+        /// <returns>An UnmanagedRef&lt;byte&gt; instance which may contain fewer or more bytes than requested</returns>
+        public UnmanagedRef<byte> AllocRoughly(int sizeBytes) {
+            if (sizeBytes < sizeof(ulong)) {
+                sizeBytes = sizeof(ulong);
+            }
+
+            var nextPowerOfTwo = NextPowerOfTwo((uint)sizeBytes);
+            var prevPowerOfTwo = nextPowerOfTwo >> 1;
+
+            int powerOfTwo;
+            if (nextPowerOfTwo - (uint)sizeBytes <= (uint)sizeBytes - prevPowerOfTwo && nextPowerOfTwo <= int.MaxValue) {
+                powerOfTwo = (int)nextPowerOfTwo;
+            }
+            else {
+                powerOfTwo = (int)prevPowerOfTwo;
+            }
+
+            var up = Page.AlignCeil(sizeBytes, powerOfTwo);
+            var down = Page.AlignFloor(sizeBytes, powerOfTwo);
+
+            if (Math.Abs(up - sizeBytes) <= Math.Abs(sizeBytes - down) || down == 0) {
+                sizeBytes = up;
+            }
+            else {
+                sizeBytes = down;
+            }
+
+            if (sizeBytes >= 512) {
+                sizeBytes -= sizeof(ulong) + itemHeaderSize;
+            }
+
+            var items = _AllocValues<byte>(sizeBytes);
             return items;
         }
 
@@ -192,9 +263,22 @@ namespace Arenas {
             }
 
             sizeBytes = Page.AlignCeil(sizeBytes, sizeof(ulong));
+            var headerSize = (uint)itemHeaderSize;
 
-            if (count > 1) {
-                sizeBytes = NextPowerOfTwo(sizeBytes);
+            if (count > 1 && sizeBytes > MinimumPageSize) {
+                // add sizeof(ulong) here because if sizeBytes + headerSize is exactly the
+                // same as the arena's page size this will cause the page allocator to add
+                // one additional increment of page size to the newly allocated page. this
+                // is because it adds sizeof(ulong) itself before rounding up to the nearest
+                // page increment, in order to guarantee 64-bit alignment on all systems.
+                //
+                // if the only allocations made to the arena were the exact size of a page
+                // then a worst case scenario of 50% of memory being wasted would occur.
+                // while this change does cause overhead on smaller allocations, due to the
+                // minimum size of over 256 bytes for this block that overhead is at most 3%.
+                var roundedSize = NextPowerOfTwo(sizeBytes + sizeof(ulong) + headerSize);
+                roundedSize -= headerSize + sizeof(ulong);
+                sizeBytes = roundedSize;
             }
 
             if (sizeBytes > int.MaxValue - sizeof(ulong)) {
@@ -205,7 +289,7 @@ namespace Arenas {
 
             // allocate items and zero memory
             RefVersion version;
-            var ptr = Allocate(type, sizeBytes, out version);
+            var ptr = Allocate(type, sizeof(T), sizeBytes, out version);
             ZeroMemory(ptr, (UIntPtr)sizeBytes);
 
             Debug.Assert(((ulong)ptr % sizeof(ulong)) == 0);
@@ -259,14 +343,14 @@ namespace Arenas {
             enumVersion++;
 
             var type = items.Type;
-            var free = ArenaContentsHelper.GetFreeDelegate(type);
-            var elementSize = Marshal.SizeOf(type);
+            var info = GetTypeInfo(type);
+            var elementSize = info.Size;
 
             if (typeof(IArenaContents).IsAssignableFrom(type)) {
                 var elementCount = items.ElementCount;
                 for (int i = 0; i < elementCount; i++) {
                     // free contents
-                    free(cur);
+                    info.TryFree(cur);
                     cur += elementSize;
                 }
             }
@@ -282,12 +366,13 @@ namespace Arenas {
             }
 
             enumVersion++;
+            var info = GetTypeInfo(typeof(T));
 
             if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
                 var elementCount = items.ElementCount;
                 for (int i = 0; i < elementCount; i++, cur++) {
                     // free contents
-                    ArenaContentsHelper.Free(cur);
+                    info.TryFree((IntPtr)cur);
                 }
             }
 
@@ -403,8 +488,9 @@ namespace Arenas {
             }
 
             // free page memory
+            var allocator = Allocator ?? DefaultAllocator;
             foreach (var page in pages) {
-                page.Free();
+                page.Free(allocator);
             }
 
             pages.Clear();
@@ -427,7 +513,7 @@ namespace Arenas {
                 }
 
                 // allocate one page to start
-                AllocPage(PageSize - sizeof(ulong));
+                AllocPage(pageSize - sizeof(ulong));
             }
         }
 
@@ -478,6 +564,7 @@ namespace Arenas {
 
         public bool IsDisposed { get { return disposedValue; } }
         public ArenaID ID { get { return id; } }
+        public IMemoryAllocator Allocator { get; private set; }
 
         #region Static
         private const int MaxFinalizedRemovalsPerAdd = 8;
@@ -489,11 +576,10 @@ namespace Arenas {
         private static ConcurrentQueue<ArenaID> finalizedRemovals;
         private static Dictionary<ArenaID, WeakReference<Arena>> arenas;
         private static object arenasLock;
-        private static Dictionary<Type, TypeHandle> typeToHandle;
-        private static Dictionary<TypeHandle, Type> handleToType;
-        private static object typeHandleLock;
         private static ZeroMemoryDelegate ZeroMemory;
         private static readonly int itemHeaderSize;
+
+        public static IMemoryAllocator DefaultAllocator { get; set; }
 
         static Arena() {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
@@ -502,7 +588,7 @@ namespace Arenas {
             else {
                 ZeroMemory = ZeroMemPlatformIndependent;
             }
-
+            
             // item header size must be 64-bit word aligned to keep 64-bit word alignment for all items
             // allocated to the arena
             itemHeaderSize = Page.AlignCeil(sizeof(ItemHeader), sizeof(ulong));
@@ -512,9 +598,7 @@ namespace Arenas {
             arenas = new Dictionary<ArenaID, WeakReference<Arena>>();
             arenasLock = new object();
 
-            typeToHandle = new Dictionary<Type, TypeHandle>();
-            handleToType = new Dictionary<TypeHandle, Type>();
-            typeHandleLock = new object();
+            DefaultAllocator = new MarshalHGlobalAllocator();
         }
 
         private static void Add(Arena arena) {
@@ -602,48 +686,6 @@ namespace Arenas {
             }
         }
 
-        internal static TypeHandle GetTypeHandle(Type type) {
-            TypeHandle handle;
-            lock (typeHandleLock) {
-                if (!typeToHandle.TryGetValue(type, out handle)) {
-                    typeToHandle[type] = handle = new TypeHandle(typeToHandle.Count + 1);
-                    if (handle.Value == 0) {
-                        throw new OverflowException("Arena.TypeHandle value overflow: too many types");
-                    }
-                    handleToType[handle] = type;
-                }
-            }
-            return handle;
-        }
-
-        internal static Type GetTypeFromHandle(TypeHandle handle) {
-            if (handle.Value == 0) {
-                return typeof(Exception);
-            }
-
-            Type type;
-            lock (typeHandleLock) {
-                if (!handleToType.TryGetValue(handle, out type)) {
-                    return typeof(Exception);
-                }
-            }
-            return type;
-        }
-
-        internal static bool TryGetTypeFromHandle(TypeHandle handle, out Type type) {
-            type = null;
-            if (handle.Value == 0) {
-                return false;
-            }
-
-            lock (typeHandleLock) {
-                if (!handleToType.TryGetValue(handle, out type)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
         // http://graphics.stanford.edu/%7Eseander/bithacks.html#RoundUpPowerOf2
         private static ulong NextPowerOfTwo(ulong v) {
             v--;
@@ -719,11 +761,11 @@ namespace Arenas {
                 Offset = 0;
             }
 
-            public void Free() {
+            public void Free(IMemoryAllocator allocator) {
                 if (freePtr == IntPtr.Zero) {
                     return;
                 }
-                Marshal.FreeHGlobal(freePtr);
+                allocator.Free(freePtr);
                 freePtr = IntPtr.Zero;
             }
 
@@ -896,40 +938,6 @@ namespace Arenas {
             }
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        internal readonly struct TypeHandle : IEquatable<TypeHandle> {
-            public readonly int Value;
-
-            public TypeHandle(int value) {
-                Value = value;
-            }
-
-            public override bool Equals(object obj) {
-                return obj is TypeHandle handle &&
-                       Value == handle.Value;
-            }
-
-            public bool Equals(TypeHandle other) {
-                return Value == other.Value;
-            }
-
-            public override int GetHashCode() {
-                return 1909215196 + Value.GetHashCode();
-            }
-
-            public static bool operator ==(TypeHandle left, TypeHandle right) {
-                return left.Equals(right);
-            }
-
-            public static bool operator !=(TypeHandle left, TypeHandle right) {
-                return !(left == right);
-            }
-
-            public override string ToString() {
-                return GetTypeFromHandle(this).ToString();
-            }
-        }
-
         [Serializable]
         public struct Enumerator : IEnumerator<UnmanagedRef>, IEnumerator {
             private Arena arena;
@@ -1027,6 +1035,17 @@ namespace Arenas {
 
             public int GetHashCode(object obj) {
                 return RuntimeHelpers.GetHashCode(obj);
+            }
+        }
+
+        public sealed class MarshalHGlobalAllocator : IMemoryAllocator {
+            public MemoryAllocation Allocate(int sizeBytes) {
+                var ptr = Marshal.AllocHGlobal(sizeBytes);
+                return new MemoryAllocation(ptr, sizeBytes);
+            }
+
+            public void Free(IntPtr ptr) {
+                Marshal.FreeHGlobal(ptr);
             }
         }
     }

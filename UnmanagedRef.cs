@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using static Arenas.TypeHandle;
+using static Arenas.TypeInfo;
 
 namespace Arenas {
     [DebuggerTypeProxy(typeof(UnmanagedRefDebugView<>))]
@@ -160,21 +163,21 @@ namespace Arenas {
         }
 
         #region Copying
-        public void CopyTo<T>(T[] dest) {
+        public void CopyTo<T>(T[] dest) where T : unmanaged {
             var elementCount = ElementCount;
             CopyTo(dest, 0, 0, elementCount, elementCount);
         }
 
-        public void CopyTo<T>(T[] dest, int destIndex) {
+        public void CopyTo<T>(T[] dest, int destIndex) where T : unmanaged {
             var elementCount = ElementCount;
             CopyTo(dest, destIndex, 0, elementCount, elementCount);
         }
 
-        public void CopyTo<T>(T[] dest, int destIndex, int sourceIndex, int count) {
+        public void CopyTo<T>(T[] dest, int destIndex, int sourceIndex, int count) where T : unmanaged {
             CopyTo(dest, destIndex, sourceIndex, count, -1);
         }
 
-        internal void CopyTo<T>(T[] dest, int destIndex, int sourceIndex, int count, int elementCount, Type type = null) {
+        internal void CopyTo<T>(T[] dest, int destIndex, int sourceIndex, int count, int elementCount, Type type = null) where T : unmanaged {
             if (dest is null) {
                 throw new ArgumentNullException(nameof(dest));
             }
@@ -198,16 +201,17 @@ namespace Arenas {
 
             type = type ?? Type;
 
-            var elementSize = Marshal.SizeOf(type);
+            var info = GetTypeInfo(type);
+            var elementSize = info.Size;
             var cur = RawUnsafePointer + elementSize * sourceIndex;
 
             for (int i = 0; i < count; i++) {
-                dest[destIndex + i] = (T)Marshal.PtrToStructure(cur, type);
+                dest[destIndex + i] = *(T*)cur;
                 cur += elementSize;
             }
         }
 
-        public T[] ToArray<T>() {
+        public T[] ToArray<T>() where T : unmanaged {
             if (!HasValue) {
                 throw new NullReferenceException($"Error in UnmanagedRef.ToArray: HasValue was false");
             }
@@ -215,6 +219,26 @@ namespace Arenas {
             var elementCount = ElementCount;
             var items = new T[elementCount];
             CopyTo(items, 0, 0, elementCount, elementCount);
+            return items;
+        }
+
+        public object[] ToArray() {
+            if (!HasValue) {
+                throw new NullReferenceException($"Error in UnmanagedRef.ToArray: HasValue was false");
+            }
+
+            var elementCount = ElementCount;
+            var items = new object[elementCount];
+
+            var info = GetTypeInfo(TypeHandle);
+            var elementSize = info.Size;
+            var cur = RawUnsafePointer;
+
+            for (int i = 0; i < elementCount; i++) {
+                items[i] = info.PtrToStruct(cur);
+                cur += elementSize;
+            }
+
             return items;
         }
         #endregion
@@ -230,8 +254,12 @@ namespace Arenas {
                 return string.Empty;
             }
 
-            var inst = Marshal.PtrToStructure(Value, Type);
-            return inst.ToString();
+            TypeInfo info;
+            if (!TryGetTypeInfo(TypeHandle, out info)) {
+                return $"UnmanagedRef(Type=<invalid>, ElementCount={elementCount})";
+            }
+
+            return info.ToString(ptr);
         }
 
         public static explicit operator IntPtr(UnmanagedRef uref) {
@@ -289,11 +317,20 @@ namespace Arenas {
                     return null;
                 }
                 Type type;
-                if (!Arena.TryGetTypeFromHandle(Arena.ItemHeader.GetTypeHandle(pointer.Value), out type)) {
+                if (!TryGetTypeFromHandle(Arena.ItemHeader.GetTypeHandle(pointer.Value), out type)) {
                     return null;
                 }
                 return type; 
             } 
+        }
+
+        public TypeHandle TypeHandle {
+            get {
+                if (!HasValue) {
+                    return TypeHandle.None;
+                }
+                return Arena.ItemHeader.GetTypeHandle(pointer.Value);
+            }
         }
 
         public Arena Arena { 
@@ -337,7 +374,14 @@ namespace Arenas {
                     }
 
                     // this is the slow path
-                    return Size / Marshal.SizeOf(Type);
+                    var handle = TypeHandle;
+                    TypeInfo info;
+                    
+                    if (!TryGetTypeInfo(handle, out info)) {
+                        return 0;
+                    }
+
+                    return Size / info.Size;
                 }
                 return packedValue;
             }

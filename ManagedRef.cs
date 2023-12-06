@@ -17,6 +17,14 @@ namespace Arenas {
             return new ManagedRef(arena.SetOutsidePtr(value, handle));
         }
 
+        public ManagedRef Set<TSource, TVal>(ref TSource source, TVal value) where TSource : unmanaged, IArenaContents where TVal : class {
+            var arena = Arena.Get(source.ArenaID);
+            if (arena is null) {
+                throw new NullReferenceException("Arena cannot be null in ManagedRef.Set");
+            }
+            return new ManagedRef(arena.SetOutsidePtr(value, handle));
+        }
+
         public T Get<T>() where T : class {
             if (handle == IntPtr.Zero) {
                 return null;

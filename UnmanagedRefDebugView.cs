@@ -36,7 +36,7 @@ namespace Arenas {
 
         public object[] Contents {
             get {
-                return uref.ToArray<object>();
+                return uref.ToArray();
             }
         }
 
