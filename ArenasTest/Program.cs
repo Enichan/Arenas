@@ -116,11 +116,18 @@ namespace ArenasTest {
         }
 
         private static Arena parentArena = new Arena();
-        private static unsafe IntPtr ChildAlloc(int sizeBytes) => (IntPtr)parentArena.AllocCount<byte>(sizeBytes).Value;
-        private static unsafe void ChildFree(IntPtr ptr) => parentArena.Free(ptr);
+
+        private unsafe class ArenaAllocator : IMemoryAllocator {
+            public MemoryAllocation Allocate(int sizeBytes) {
+                var alloc = parentArena.AllocCount<byte>(sizeBytes - sizeof(ulong));
+                return new MemoryAllocation((IntPtr)alloc.Value, alloc.Size);
+            }
+
+            public void Free(IntPtr ptr) => parentArena.Free(ptr);
+        }
 
         static unsafe void ArenaArenas() {
-            using (var childArena = new Arena(ChildAlloc, ChildFree)) {
+            using (var childArena = new Arena(new ArenaAllocator())) {
                 var john = childArena.Allocate(new Person());
                 john.Value->FirstName = "John";
                 john.Value->LastName = "Doe";

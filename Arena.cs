@@ -10,12 +10,10 @@ using static Arenas.TypeHandle;
 using static Arenas.TypeInfo;
 
 namespace Arenas {
-    public delegate IntPtr AllocMemoryDelegate(int sizeBytes);
-    public delegate void FreeMemoryDelegate(IntPtr ptr);
-
     // NOTE: all items allocated to the arena will be aligned to a 64-bit word boundary and their size will be a multiple of 64-bits
     public unsafe class Arena : IDisposable, IEnumerable<UnmanagedRef> {
-        public const int PageSize = 4096;
+        public const int DefaultPageSize = 4096;
+        public const int MinimumPageSize = 256;
 
         private Dictionary<object, ObjectEntry> objToPtr;
         private bool disposedValue;
@@ -24,18 +22,25 @@ namespace Arenas {
         private ArenaID id;
         private int enumVersion;
         private bool initialized;
+        private int pageSize;
 
-        public Arena()
-            : this(DefaultAllocMemory, DefaultFreeMemory) {
+        public Arena(int pageSize = DefaultPageSize)
+            : this(DefaultAllocator, pageSize) {
         }
 
-        public Arena(AllocMemoryDelegate allocMem, FreeMemoryDelegate freeMem) {
+        public Arena(IMemoryAllocator allocator, int pageSize = DefaultPageSize) {
+            if (pageSize < MinimumPageSize) {
+                throw new ArgumentOutOfRangeException(nameof(pageSize), $"Arena page size must be greater than or equal to {MinimumPageSize} bytes");
+            }
+            if ((uint)pageSize != NextPowerOfTwo((uint)pageSize)) {
+                throw new ArgumentOutOfRangeException(nameof(pageSize), $"Arena page size must be a power of two");
+            }
+
+            this.pageSize = pageSize;
             objToPtr = new Dictionary<object, ObjectEntry>(ObjectReferenceEqualityComparer.Instance);
             pages = new List<Page>();
             freelists = new Dictionary<int, Freelist>();
-
-            AllocMemory = allocMem ?? throw new ArgumentNullException(nameof(allocMem));
-            FreeMemory = freeMem ?? throw new ArgumentNullException(nameof(freeMem));
+            Allocator = allocator ?? throw new ArgumentNullException(nameof(allocator));
 
             // call clear to set up everything we need for use
             Clear(false);
@@ -92,11 +97,16 @@ namespace Arenas {
             // add one 64-bit word in size to make sure this can always be 64-bit aligned
             // while keeping the original size (unused space is available if already aligned)
             size += sizeof(ulong);
-            size = Page.AlignCeil(size, PageSize);
+            size = Page.AlignCeil(size, pageSize);
 
             // allocate pointer, potentially unaligned to 64-bit word
-            var mem = (AllocMemory ?? DefaultAllocMemory)(size);
-            ZeroMemory(mem, (UIntPtr)size);
+            var alloc = (Allocator ?? DefaultAllocator).Allocate(size);
+            
+            var mem = alloc.Pointer;
+            var actualSize = Page.AlignFloor(alloc.SizeBytes, sizeof(ulong));
+            Debug.Assert(actualSize >= size);
+
+            ZeroMemory(mem, (UIntPtr)alloc.SizeBytes);
 
             // store the original pointer for freeing, and find 64-bit word align position
             var freePtr = mem;
@@ -108,11 +118,11 @@ namespace Arenas {
                 // memory is misaligned, realign and reduce size accordingly
                 var sizeDifference = (int)((ulong)aligned - (ulong)mem);
                 mem = aligned;
-                size -= sizeDifference;
+                actualSize -= sizeDifference;
             }
 
             // create page
-            var page = new Page(freePtr, mem, size);
+            var page = new Page(freePtr, mem, actualSize);
             pages.Add(page);
 
             Debug.Assert(((ulong)page.Address % sizeof(ulong)) == 0);
@@ -207,9 +217,12 @@ namespace Arenas {
             }
 
             sizeBytes = Page.AlignCeil(sizeBytes, sizeof(ulong));
+            var headerSize = (uint)itemHeaderSize;
 
-            if (count > 1) {
-                sizeBytes = NextPowerOfTwo(sizeBytes);
+            if (count > 1 && sizeBytes > MinimumPageSize) {
+                var roundedSize = NextPowerOfTwo(sizeBytes + sizeof(ulong) + headerSize);
+                roundedSize -= headerSize + sizeof(ulong);
+                sizeBytes = roundedSize;
             }
 
             if (sizeBytes > int.MaxValue - sizeof(ulong)) {
@@ -419,9 +432,9 @@ namespace Arenas {
             }
 
             // free page memory
-            var freeMem = FreeMemory ?? DefaultFreeMemory;
+            var allocator = Allocator ?? DefaultAllocator;
             foreach (var page in pages) {
-                page.Free(freeMem);
+                page.Free(allocator);
             }
 
             pages.Clear();
@@ -444,7 +457,7 @@ namespace Arenas {
                 }
 
                 // allocate one page to start
-                AllocPage(PageSize - sizeof(ulong));
+                AllocPage(pageSize - sizeof(ulong));
             }
         }
 
@@ -495,8 +508,7 @@ namespace Arenas {
 
         public bool IsDisposed { get { return disposedValue; } }
         public ArenaID ID { get { return id; } }
-        public AllocMemoryDelegate AllocMemory { get; }
-        public FreeMemoryDelegate FreeMemory { get; }
+        public IMemoryAllocator Allocator { get; private set; }
 
         #region Static
         private const int MaxFinalizedRemovalsPerAdd = 8;
@@ -511,8 +523,7 @@ namespace Arenas {
         private static ZeroMemoryDelegate ZeroMemory;
         private static readonly int itemHeaderSize;
 
-        public static AllocMemoryDelegate DefaultAllocMemory { get; set; }
-        public static FreeMemoryDelegate DefaultFreeMemory { get; set; }
+        public static IMemoryAllocator DefaultAllocator { get; set; }
 
         static Arena() {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
@@ -531,8 +542,7 @@ namespace Arenas {
             arenas = new Dictionary<ArenaID, WeakReference<Arena>>();
             arenasLock = new object();
 
-            DefaultAllocMemory = Marshal.AllocHGlobal;
-            DefaultFreeMemory = Marshal.FreeHGlobal;
+            DefaultAllocator = new MarshalHGlobalAllocator();
         }
 
         private static void Add(Arena arena) {
@@ -695,11 +705,11 @@ namespace Arenas {
                 Offset = 0;
             }
 
-            public void Free(FreeMemoryDelegate freeMem) {
+            public void Free(IMemoryAllocator allocator) {
                 if (freePtr == IntPtr.Zero) {
                     return;
                 }
-                freeMem(freePtr);
+                allocator.Free(freePtr);
                 freePtr = IntPtr.Zero;
             }
 
@@ -969,6 +979,17 @@ namespace Arenas {
 
             public int GetHashCode(object obj) {
                 return RuntimeHelpers.GetHashCode(obj);
+            }
+        }
+
+        public sealed class MarshalHGlobalAllocator : IMemoryAllocator {
+            public MemoryAllocation Allocate(int sizeBytes) {
+                var ptr = Marshal.AllocHGlobal(sizeBytes);
+                return new MemoryAllocation(ptr, sizeBytes);
+            }
+
+            public void Free(IntPtr ptr) {
+                Marshal.FreeHGlobal(ptr);
             }
         }
     }
