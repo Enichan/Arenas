@@ -24,7 +24,7 @@ namespace ArenasTest {
                 jack.Value->FirstName = "Jack";
                 jack.Value->LastName = "Black";
 
-                Console.WriteLine($"Size of UnmanagedRef: {Marshal.SizeOf(john)}");
+                Console.WriteLine($"Size of UnmanagedRef: {sizeof(UnmanagedRef)}");
 
                 Console.WriteLine(john);
                 Console.WriteLine(jack);
@@ -47,7 +47,7 @@ namespace ArenasTest {
 
                 // free an item
                 arena.Free(jack);
-
+                
                 Console.WriteLine("Items in arena after freeing:");
                 foreach (var item in arena) {
                     Console.WriteLine(item);
@@ -86,6 +86,10 @@ namespace ArenasTest {
             Console.WriteLine();
             Console.WriteLine("Running unmanaged list of pointers code");
             UnmanagedPtrList();
+
+            Console.WriteLine();
+            Console.WriteLine("Running arenas in arenas");
+            ArenaArenas();
         }
 
         static unsafe void UnmanagedPtrList() {
@@ -111,6 +115,37 @@ namespace ArenasTest {
                     var person = item.As<Person>();
                     Console.WriteLine(*person);
                 }
+            }
+        }
+
+        private static Arena parentArena = new Arena();
+
+        private unsafe class ArenaAllocator : IMemoryAllocator {
+            public MemoryAllocation Allocate(int sizeBytes) {
+                var alloc = parentArena.AllocCount<byte>(sizeBytes);
+                return new MemoryAllocation((IntPtr)alloc.Value, alloc.Size);
+            }
+
+            public void Free(IntPtr ptr) => parentArena.Free(ptr);
+        }
+
+        static unsafe void ArenaArenas() {
+            // by using a page size of 2048 we're actually guaranteeing this allocator
+            // will use pages of ~4k, because the size is rounded to the next power of
+            // two after adding the item header size
+            using (var childArena = new Arena(new ArenaAllocator(), 2048)) {
+                var john = childArena.Allocate(new Person());
+                john.Value->FirstName = "John";
+                john.Value->LastName = "Doe";
+
+                var jack = childArena.Allocate(new Person());
+                jack.Value->FirstName = "Jack";
+                jack.Value->LastName = "Black";
+
+                Console.WriteLine("Child arena:");
+                foreach (var item in childArena) Console.WriteLine(item);
+                Console.WriteLine("Parent arena:");
+                foreach (var item in parentArena) Console.WriteLine(item);
             }
         }
     }

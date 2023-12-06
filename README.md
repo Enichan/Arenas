@@ -22,6 +22,7 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 - Ability to free items via `IntPtr`
 - `UnmanagedRef` is a lightweight struct (only 16 bytes in size) but will cache element counts (always for 7 or fewer elements, and for 32k or fewer elements until item versions exceed 32k)
 - `UnmanagedRef` is blittable and can itself be stored inside arenas (see samples)
+- Set custom memory allocator using `AllocMemory`/`FreeMemory` or set defaults via `DefaultAllocMemory`/`DefaultFreeMemory`
 
 ## Samples
 
