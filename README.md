@@ -1,6 +1,6 @@
 # Arenas: Arena allocators for C#/CSharp
 
-This is a .NET Standard 2.0 library that provides access to arena allocators along with the ability to use unmanaged references with natural C# syntax and safe-guards, as well as the ability for arena-allocated items to reference managed C# objects.
+This is a .NET Standard 2.0 library that provides access to arena allocators along with the ability to use unmanaged references with natural C# syntax and safe-guards, as well as the ability for arena-allocated items to reference managed C# objects. It is NativeAOT compatible.
 
 Use by creating a `new Arena()` and calling `Allocate` with blittable structs or `AllocCount` to allocate arrays of items. Types that implement `IArenaContents` will automatically have `Free` called and `ArenaID` set where appropriate (without boxing.)
 
