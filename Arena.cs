@@ -188,7 +188,7 @@ namespace Arenas {
             var info = GenerateTypeInfo<T>();
             var items = _AllocValues<T>(count);
 
-            if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
+            if (info.IsArenaContents) {
                 var cur = items.Value;
                 var elementCount = items.ElementCount;
 
@@ -346,7 +346,7 @@ namespace Arenas {
             var info = GetTypeInfo(type);
             var elementSize = info.Size;
 
-            if (typeof(IArenaContents).IsAssignableFrom(type)) {
+            if (info.IsArenaContents) {
                 var elementCount = items.ElementCount;
                 for (int i = 0; i < elementCount; i++) {
                     // free contents
@@ -368,7 +368,7 @@ namespace Arenas {
             enumVersion++;
             var info = GetTypeInfo(typeof(T));
 
-            if (typeof(IArenaContents).IsAssignableFrom(typeof(T))) {
+            if (info.IsArenaContents) {
                 var elementCount = items.ElementCount;
                 for (int i = 0; i < elementCount; i++, cur++) {
                     // free contents
