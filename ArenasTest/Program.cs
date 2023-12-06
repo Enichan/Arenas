@@ -119,7 +119,7 @@ namespace ArenasTest {
 
         private unsafe class ArenaAllocator : IMemoryAllocator {
             public MemoryAllocation Allocate(int sizeBytes) {
-                var alloc = parentArena.AllocCount<byte>(sizeBytes - sizeof(ulong));
+                var alloc = parentArena.AllocCount<byte>(sizeBytes);
                 return new MemoryAllocation((IntPtr)alloc.Value, alloc.Size);
             }
 
@@ -127,7 +127,10 @@ namespace ArenasTest {
         }
 
         static unsafe void ArenaArenas() {
-            using (var childArena = new Arena(new ArenaAllocator())) {
+            // by using a page size of 2048 we're actually guaranteeing this allocator
+            // will uses pages of ~4k, because the size is rounded to the next power of
+            // two after adding the item header size
+            using (var childArena = new Arena(new ArenaAllocator(), 2048)) {
                 var john = childArena.Allocate(new Person());
                 john.Value->FirstName = "John";
                 john.Value->LastName = "Doe";

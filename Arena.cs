@@ -220,6 +220,16 @@ namespace Arenas {
             var headerSize = (uint)itemHeaderSize;
 
             if (count > 1 && sizeBytes > MinimumPageSize) {
+                // add sizeof(ulong) here because if sizeBytes + headerSize is exactly the
+                // same as the arena's page size this will cause the page allocator to add
+                // one additional increment of page size to the newly allocated page. this
+                // is because it adds sizeof(ulong) itself before rounding up to the nearest
+                // page increment, in order to guarantee 64-bit alignment on all systems.
+                //
+                // if the only allocations made to the arena were the exact size of a page
+                // then a worst case scenario of 50% of memory being wasted would occur.
+                // while this change does cause overhead on smaller allocations, due to the
+                // minimum size of over 256 bytes for this block that overhead is at most 3%.
                 var roundedSize = NextPowerOfTwo(sizeBytes + sizeof(ulong) + headerSize);
                 roundedSize -= headerSize + sizeof(ulong);
                 sizeBytes = roundedSize;
