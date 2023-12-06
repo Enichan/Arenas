@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -197,6 +198,51 @@ namespace Arenas {
                 }
             }
 
+            return items;
+        }
+
+        /// <summary>
+        /// Allocate an approximate amount of bytes. The arena will allocate a number of bytes that may be
+        /// greater or less than the amount requested, and which optimally uses the allocator's memory
+        /// resources for sizes 384 and over. Use this when allocating buffers where you don't care what the
+        /// exact length of the requested buffer is.
+        /// 
+        /// Effectively this method call will round to the nearest power of two, give or take some bytes for
+        /// overhead from allocation headers.
+        /// </summary>
+        /// <param name="sizeBytes">The approximate amount of bytes you're requesting from the arena</param>
+        /// <returns>An UnmanagedRef&lt;byte&gt; instance which may contain fewer or more bytes than requested</returns>
+        public UnmanagedRef<byte> AllocRoughly(int sizeBytes) {
+            if (sizeBytes < sizeof(ulong)) {
+                sizeBytes = sizeof(ulong);
+            }
+
+            var nextPowerOfTwo = NextPowerOfTwo((uint)sizeBytes);
+            var prevPowerOfTwo = nextPowerOfTwo >> 1;
+
+            int powerOfTwo;
+            if (nextPowerOfTwo - (uint)sizeBytes <= (uint)sizeBytes - prevPowerOfTwo && nextPowerOfTwo <= int.MaxValue) {
+                powerOfTwo = (int)nextPowerOfTwo;
+            }
+            else {
+                powerOfTwo = (int)prevPowerOfTwo;
+            }
+
+            var up = Page.AlignCeil(sizeBytes, powerOfTwo);
+            var down = Page.AlignFloor(sizeBytes, powerOfTwo);
+
+            if (Math.Abs(up - sizeBytes) <= Math.Abs(sizeBytes - down) || down == 0) {
+                sizeBytes = up;
+            }
+            else {
+                sizeBytes = down;
+            }
+
+            if (sizeBytes >= 512) {
+                sizeBytes -= sizeof(ulong) + itemHeaderSize;
+            }
+
+            var items = _AllocValues<byte>(sizeBytes);
             return items;
         }
 
