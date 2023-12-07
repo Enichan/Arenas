@@ -24,7 +24,7 @@ namespace Arenas {
             var minCapacity = Math.Max(capacity, defaultCapacity);
             var itemsRef = arena.AllocCount<T>(minCapacity);
 
-            info.Value->Items = (IntPtr)itemsRef.Value;
+            info.Value->Items = (UnmanagedRef)itemsRef;
             info.Value->Capacity = itemsRef.ElementCount; // we might get more capacity than requested
         }
 
@@ -36,7 +36,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot Free UnmanagedList<T>: list memory has previously been freed");
             }
 
-            var items = Arena.UnmanagedRefFromPtr<T>(info.Value->Items);
+            var items = info.Value->Items;
             Arena.Free(items);
             Arena.Free(info);
         }
@@ -54,7 +54,7 @@ namespace Arenas {
 
         private void Copy(int sourceIndex, int destIndex, int count) {
             Debug.Assert(destIndex + count <= info.Value->Capacity, "Bad ArenaList copy");
-            var items = (T*)info.Value->Items;
+            var items = (T*)info.Value->Items.RawUnsafePointer;
             var source = items + sourceIndex;
             var dest = items + destIndex;
             var destSize = (info.Value->Capacity - destIndex) * sizeof(T);
@@ -69,15 +69,15 @@ namespace Arenas {
 
             var newMinCapacity = info.Value->Capacity * 2;
 
-            var items = Arena.UnmanagedRefFromPtr<T>(info.Value->Items);
+            var items = info.Value->Items;
             var newItems = Arena.AllocCount<T>(newMinCapacity);
             info.Value->Capacity = newItems.ElementCount; // we might get more capacity than requested
 
             var newSize = newItems.Size;
-            Buffer.MemoryCopy(items.Value, newItems.Value, newSize, newSize);
+            Buffer.MemoryCopy((void*)items.Value, newItems.Value, newSize, newSize);
             Arena.Free(items);
 
-            info.Value->Items = (IntPtr)newItems.Value;
+            info.Value->Items = (UnmanagedRef)newItems;
         }
 
         public void Add(T item) {
@@ -89,7 +89,7 @@ namespace Arenas {
             }
             info.Value->Version++;
             AddCapacity();
-            ((T*)info.Value->Items)[info.Value->Count] = item;
+            ((T*)info.Value->Items.RawUnsafePointer)[info.Value->Count] = item;
             info.Value->Count++;
         }
 
@@ -107,7 +107,7 @@ namespace Arenas {
             info.Value->Version++;
             AddCapacity();
 
-            var items = (T*)info.Value->Items;
+            var items = (T*)info.Value->Items.RawUnsafePointer;
 
             if (index == Count) {
                 items[info.Value->Count] = item;
@@ -165,7 +165,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot get IndexOf item in UnmanagedList<T>: list memory has previously been freed");
             }
             var count = Count;
-            var cur = (T*)info.Value->Items;
+            var cur = (T*)info.Value->Items.RawUnsafePointer;
 
             for (int i = 0; i < count; i++) {
                 if (EqualityComparer<T>.Default.Equals(*(cur++), item)) {
@@ -210,7 +210,7 @@ namespace Arenas {
             if (sourceIndex < 0 || sourceIndex + count > Count) {
                 throw new ArgumentOutOfRangeException(nameof(sourceIndex));
             }
-            var items = Arena.UnmanagedRefFromPtr<T>(info.Value->Items);
+            var items = info.Value->Items;
             items.CopyTo(dest, destIndex, sourceIndex, count);
         }
 
@@ -243,7 +243,7 @@ namespace Arenas {
                 if (index < 0 || index >= info.Value->Count) {
                     throw new IndexOutOfRangeException();
                 }
-                return ((T*)info.Value->Items)[index];
+                return ((T*)info.Value->Items.RawUnsafePointer)[index];
             }
             set {
                 if (Arena is null) {
@@ -256,7 +256,7 @@ namespace Arenas {
                     throw new IndexOutOfRangeException();
                 }
                 info.Value->Version++;
-                ((T*)info.Value->Items)[index] = value;
+                ((T*)info.Value->Items.RawUnsafePointer)[index] = value;
             }
         }
 
@@ -284,7 +284,7 @@ namespace Arenas {
                 this.list = list;
                 index = 0;
                 version = list.info.Value->Version;
-                current = default(T);
+                current = default;
             }
 
             public void Dispose() {
@@ -307,7 +307,7 @@ namespace Arenas {
                 }
 
                 index = list.info.Value->Count + 1;
-                current = default(T);
+                current = default;
                 return false;
             }
 
@@ -332,14 +332,14 @@ namespace Arenas {
                 }
 
                 index = 0;
-                current = default(T);
+                current = default;
             }
         }
     }
 
     [StructLayout(LayoutKind.Sequential)]
     public struct UnmanagedList {
-        public IntPtr Items;
+        public UnmanagedRef Items;
         public int Count;
         public int Capacity;
         public int Version;

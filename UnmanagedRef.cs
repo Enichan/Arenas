@@ -93,7 +93,7 @@ namespace Arenas {
         #endregion
 
         public static explicit operator IntPtr(UnmanagedRef<T> uref) {
-            return uref.Reference.RawUnsafePointer;
+            return (IntPtr)uref.Reference;
         }
 
         public static explicit operator UnmanagedRef(UnmanagedRef<T> uref) {
@@ -263,7 +263,7 @@ namespace Arenas {
         }
 
         public static explicit operator IntPtr(UnmanagedRef uref) {
-            return uref.pointer.Value;
+            return uref.Value;
         }
 
         public T* As<T>() where T : unmanaged {
