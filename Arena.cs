@@ -951,7 +951,7 @@ namespace Arenas {
                 pageIndex = 0;
                 offset = 0;
                 version = arena.enumVersion;
-                current = default(UnmanagedRef);
+                current = default;
             }
 
             public void Dispose() {
@@ -996,7 +996,7 @@ namespace Arenas {
 
                 pageIndex = arena.pages.Count + 1;
                 offset = 0;
-                current = default(UnmanagedRef);
+                current = default;
                 return false;
             }
 
@@ -1022,7 +1022,7 @@ namespace Arenas {
 
                 pageIndex = 0;
                 offset = 0;
-                current = default(UnmanagedRef);
+                current = default;
             }
         }
 
