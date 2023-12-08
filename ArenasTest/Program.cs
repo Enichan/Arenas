@@ -12,6 +12,11 @@ namespace ArenasTest {
             UnmanagedRef<Person> staleRefTest;
 
             using (var arena = new Arena()) {
+                var dict = new ArenaDict<int, int>(arena);
+                dict.Add(69, 12);
+                dict.Add(345, 24);
+                dict.Add(10, 666);
+
                 // allocate some people in the arena
                 var john = arena.Allocate(new Person());
                 john.Value->FirstName = "John";

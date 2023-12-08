@@ -82,7 +82,7 @@ namespace Arenas {
             return *inst;
         }
 
-        internal static TypeInfo GenerateTypeInfo<T>() where T : unmanaged {
+        public static TypeInfo GenerateTypeInfo<T>() where T : unmanaged {
             Type type = typeof(T);
             TypeInfo info;
 

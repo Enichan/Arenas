@@ -98,20 +98,20 @@ namespace Arenas {
             // add one 64-bit word in size to make sure this can always be 64-bit aligned
             // while keeping the original size (unused space is available if already aligned)
             size += sizeof(ulong);
-            size = Page.AlignCeil(size, pageSize);
+            size = MemAlign.Ceil(size, pageSize);
 
             // allocate pointer, potentially unaligned to 64-bit word
             var alloc = (Allocator ?? DefaultAllocator).Allocate(size);
             
             var mem = alloc.Pointer;
-            var actualSize = Page.AlignFloor(alloc.SizeBytes, sizeof(ulong));
+            var actualSize = MemAlign.Floor(alloc.SizeBytes, sizeof(ulong));
             Debug.Assert(actualSize >= size);
 
             ZeroMemory(mem, (UIntPtr)alloc.SizeBytes);
 
             // store the original pointer for freeing, and find 64-bit word align position
             var freePtr = mem;
-            var aligned = Page.AlignCeil(mem, sizeof(ulong));
+            var aligned = MemAlign.Ceil(mem, sizeof(ulong));
 
             // page memory must be 64-bit word aligned to keep 64-bit word alignment for all items
             // allocated to the arena
@@ -228,8 +228,8 @@ namespace Arenas {
                 powerOfTwo = (int)prevPowerOfTwo;
             }
 
-            var up = Page.AlignCeil(sizeBytes, powerOfTwo);
-            var down = Page.AlignFloor(sizeBytes, powerOfTwo);
+            var up = MemAlign.Ceil(sizeBytes, powerOfTwo);
+            var down = MemAlign.Floor(sizeBytes, powerOfTwo);
 
             if (Math.Abs(up - sizeBytes) <= Math.Abs(sizeBytes - down) || down == 0) {
                 sizeBytes = up;
@@ -262,7 +262,7 @@ namespace Arenas {
                 sizeBytes = sizeof(ulong);
             }
 
-            sizeBytes = Page.AlignCeil(sizeBytes, sizeof(ulong));
+            sizeBytes = MemAlign.Ceil(sizeBytes, sizeof(ulong));
             var headerSize = (uint)itemHeaderSize;
 
             if (count > 1 && sizeBytes > MinimumPageSize) {
@@ -591,7 +591,7 @@ namespace Arenas {
             
             // item header size must be 64-bit word aligned to keep 64-bit word alignment for all items
             // allocated to the arena
-            itemHeaderSize = Page.AlignCeil(sizeof(ItemHeader), sizeof(ulong));
+            itemHeaderSize = MemAlign.Ceil(sizeof(ItemHeader), sizeof(ulong));
             Debug.Assert((itemHeaderSize % sizeof(ulong)) == 0);
 
             finalizedRemovals = new ConcurrentQueue<ArenaID>();
@@ -790,32 +790,6 @@ namespace Arenas {
 
             public override string ToString() {
                 return $"Page(Address=0x{Address.ToInt64():x}, Size={Size}, Offset={Offset})";
-            }
-
-            public static int AlignFloor(int addr, int size) {
-                return addr & (~(size - 1));
-            }
-
-            public static int AlignCeil(int addr, int size) {
-                return (addr + (size - 1)) & (~(size - 1));
-            }
-
-            public static IntPtr AlignFloor(IntPtr addr, int size) {
-                return (IntPtr)AlignFloor((ulong)addr, size);
-            }
-
-            public static IntPtr AlignCeil(IntPtr addr, int size) {
-                return (IntPtr)AlignCeil((ulong)addr, size);
-            }
-
-            public static ulong AlignFloor(ulong addr, int size) {
-                var sizel = (ulong)size;
-                return addr & (~(sizel - 1));
-            }
-
-            public static ulong AlignCeil(ulong addr, int size) {
-                var sizel = (ulong)size;
-                return (addr + (sizel - 1)) & (~(sizel - 1));
             }
         }
 
