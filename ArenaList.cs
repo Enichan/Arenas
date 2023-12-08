@@ -36,9 +36,11 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot Free UnmanagedList<T>: list memory has previously been freed");
             }
 
+#warning this will free items stored in the list, which may not be intended
             var items = info.Value->Items;
             Arena.Free(items);
             Arena.Free(info);
+            info = default;
         }
 
         public void Clear() {

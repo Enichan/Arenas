@@ -13,11 +13,21 @@ namespace ArenasTest {
 
             using (var arena = new Arena()) {
                 var dict = new ArenaDict<int, int>(arena);
-                dict.Add(69, 12);
-                dict.Add(345, 24);
-                dict.Add(10, 666);
-                dict[10] = 123;
-                Console.WriteLine(dict[10]);
+                var second = dict;
+
+                for (int i = 0; i < 32; i++) {
+                    dict[i] = i;
+                }
+
+                dict.Clear();
+
+                for (int i = 0; i < 4; i++) {
+                    dict[i] = i;
+                }
+
+                foreach (var kvp in dict) {
+                    Console.WriteLine(kvp);
+                }
 
                 // allocate some people in the arena
                 var john = arena.Allocate(new Person());
@@ -48,6 +58,8 @@ namespace ArenasTest {
                 foreach (var i in list) {
                     Console.WriteLine(i);
                 }
+
+                list.Free();
 
                 // free an item
                 arena.Free(jack);

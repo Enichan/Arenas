@@ -3,33 +3,45 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO.IsolatedStorage;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Arenas {
-    //[DebuggerTypeProxy(typeof(ArenaListDebugView<>))]
+    [DebuggerTypeProxy(typeof(ArenaDictDebugView<,>))]
     public unsafe struct ArenaDict<TKey, TValue> /*: IDictionary<TKey, TValue>*/ where TKey : unmanaged where TValue : unmanaged{
         private const int defaultCapacity = 8;
-        private const int defaultShiftAmt = 32 - 3;
         private const uint fibHashMagic = 2654435769;
 
         private UnmanagedRef<UnmanagedDict> info;
 
-        public ArenaDict(Arena arena) {
+        public ArenaDict(Arena arena, int capacity = defaultCapacity) {
             if (arena is null) {
                 throw new ArgumentNullException(nameof(arena));
             }
             info = arena.Allocate(new UnmanagedDict());
 
+            if (capacity <= 0) {
+                capacity = defaultCapacity;
+            }
+
+            var powTwo = MemHelper.NextPowerOfTwo((ulong)capacity);
+            if (powTwo > int.MaxValue) {
+                throw new ArgumentOutOfRangeException(nameof(capacity));
+            }
+
+            capacity = (int)powTwo;
+            var shift = 32 - MemHelper.PowerOfTwoLeadingZeros[powTwo];
+
             var typeK = TypeInfo.GenerateTypeInfo<TKey>();
             var typeV = TypeInfo.GenerateTypeInfo<TValue>();
             var entryInfo = TypeInfo.GenerateTypeInfo<UnmanagedDictEntry>();
-            var entrySize = MemAlign.Ceil(typeK.Size + typeV.Size + entryInfo.Size, sizeof(ulong));
+            var entrySize = MemHelper.AlignCeil(typeK.Size + typeV.Size + entryInfo.Size, sizeof(ulong));
 
-            var capacity = defaultCapacity;
             var size = capacity * entrySize;
             size *= 2; // extra space for linked lists
             var itemsRef = arena.AllocCount<byte>(size);
@@ -46,8 +58,8 @@ namespace Arenas {
             info.Value->OverflowLength = itemsRef.Size / entrySize - bufferLength;
             Debug.Assert(info.Value->OverflowLength >= info.Value->BufferLength);
 
-            info.Value->Bump = itemsRef.Size - entrySize * info.Value->OverflowLength;
-            info.Value->Shift = defaultShiftAmt;
+            info.Value->Bump = info.Value->BufferLength * info.Value->EntrySize;
+            info.Value->Shift = shift;
         }
 
         // https://probablydance.com/2018/06/16/fibonacci-hashing-the-optimization-that-the-world-forgot-or-a-better-alternative-to-integer-modulo/
@@ -56,29 +68,34 @@ namespace Arenas {
             return (fibHashMagic * hash) >> shift;
         }
 
-        //public void Free() {
-        //    if (Arena is null) {
-        //        throw new InvalidOperationException("Cannot Free UnmanagedDict<K, V>: list has not been properly initialized with arena reference");
-        //    }
-        //    if (!info.HasValue) {
-        //        throw new InvalidOperationException("Cannot Free UnmanagedDict<K, V>: list memory has previously been freed");
-        //    }
+        public void Free() {
+            if (Arena is null) {
+                throw new InvalidOperationException("Cannot Free UnmanagedDict<TKey, TValue>: list has not been properly initialized with arena reference");
+            }
+            if (!info.HasValue) {
+                throw new InvalidOperationException("Cannot Free UnmanagedDict<TKey, TValue>: list memory has previously been freed");
+            }
 
-        //    var items = info.Value->Items;
-        //    Arena.Free(items);
-        //    Arena.Free(info);
-        //}
+            var items = info.Value->ItemsBuffer;
+            Arena.Free(items);
+            Arena.Free(info);
+            info = default;
+        }
 
-        //public void Clear() {
-        //    if (Arena is null) {
-        //        throw new InvalidOperationException("Cannot Clear UnmanagedDict<K, V>: list has not been properly initialized with arena reference");
-        //    }
-        //    if (!info.HasValue) {
-        //        throw new InvalidOperationException("Cannot Clear UnmanagedDict<K, V>: list memory has previously been freed");
-        //    }
-        //    info.Value->Version++;
-        //    info.Value->Count = 0;
-        //}
+        public void Clear() {
+            if (Arena is null) {
+                throw new InvalidOperationException("Cannot Clear UnmanagedDict<TKey, TValue>: list has not been properly initialized with arena reference");
+            }
+            if (!info.HasValue) {
+                throw new InvalidOperationException("Cannot Clear UnmanagedDict<TKey, TValue>: list memory has previously been freed");
+            }
+
+            info.Value->Version++;
+            info.Value->Count = 0;
+            info.Value->Bump = info.Value->BufferLength * info.Value->EntrySize;
+            info.Value->Head = 0;
+            MemHelper.ZeroMemory(info.Value->ItemsBuffer.Value, info.Value->Bump);
+        }
 
         //private void Copy(int sourceIndex, int destIndex, int count) {
         //    Debug.Assert(destIndex + count <= info.Value->Capacity, "Bad ArenaList copy");
@@ -90,32 +107,28 @@ namespace Arenas {
         //    Buffer.MemoryCopy(source, dest, destSize, bytesToCopy);
         //}
 
-        //private void AddCapacity() {
-        //    if (info.Value->Count < info.Value->Capacity) {
-        //        return;
-        //    }
-
-        //    var newMinCapacity = info.Value->Capacity * 2;
-
-        //    var items = info.Value->Items;
-        //    var newItems = Arena.AllocCount<K, V>(newMinCapacity);
-        //    info.Value->Capacity = newItems.ElementCount; // we might get more capacity than requested
-
-        //    var newSize = newItems.Size;
-        //    Buffer.MemoryCopy((void*)items.Value, newItems.Value, newSize, newSize);
-        //    Arena.Free(items);
-
-        //    info.Value->Items = (UnmanagedRef)newItems;
-        //}
-
-        public void Add(TKey key, TValue value) {
-            if (Arena is null) {
-                throw new InvalidOperationException("Cannot Add item to UnmanagedDict<K, V>: list has not been properly initialized with arena reference");
+        private void AddCapacity() {
+            // copy into new dictionary
+            var newDict = new ArenaDict<TKey, TValue>(info.Arena, info.Value->BufferLength * 2);
+            foreach (var kvp in this) {
+                newDict.Add(kvp.Key, kvp.Value);
             }
-            if (!info.HasValue) {
-                throw new InvalidOperationException("Cannot Add item to UnmanagedDict<K, V>: list memory has previously been freed");
-            }
-            Set(&key, &value, false);
+
+            // free old items buffer
+            var items = info.Value->ItemsBuffer;
+            Arena.Free(items);
+
+            // copy new dictionary's info
+            *info.Value = *newDict.info.Value;
+
+            // free new dictionary's info
+            Arena.Free(newDict.info);
+        }
+
+        private int GetHashCode(TKey* key) {
+            var hashCode = key->GetHashCode();
+            if (hashCode == 0) hashCode = 0x1234ABCD;
+            return hashCode;
         }
 
         private bool TryGetEntry(TKey* key, int hashCode, out Entry entry) {
@@ -144,10 +157,14 @@ namespace Arenas {
             }
         }
 
-        private int GetHashCode(TKey* key) {
-            var hashCode = key->GetHashCode();
-            if (hashCode == 0) hashCode = 1;
-            return hashCode;
+        public void Add(TKey key, TValue value) {
+            if (Arena is null) {
+                throw new InvalidOperationException("Cannot Add item to UnmanagedDict<TKey, TValue>: list has not been properly initialized with arena reference");
+            }
+            if (!info.HasValue) {
+                throw new InvalidOperationException("Cannot Add item to UnmanagedDict<TKey, TValue>: list memory has previously been freed");
+            }
+            Set(&key, &value, false);
         }
 
         private TValue* Get(TKey* key, bool throwIfNotFound) {
@@ -168,17 +185,22 @@ namespace Arenas {
                 // no key found, add to bucket
                 var head = GetHead();
                 info.Value->Head = head.Next;
-                entry.Next = head.Offset;
-
-                head.HashCode = hashCode;
                 head.Next = 0;
-                *head.Key = *key;
-                *head.Value = *value;
+                entry.Next = head.Offset;
+                entry = head;
             }
-            else {
-                entry.HashCode = hashCode;
-                *entry.Key = *key;
-                *entry.Value = *value;
+
+            Insert(entry, hashCode, key, value);
+        }
+
+        private void Insert(Entry entry, int hashCode, TKey* key, TValue* value) {
+            entry.HashCode = hashCode;
+            *entry.Key = *key;
+            *entry.Value = *value;
+
+            info.Value->Count++;
+            if (info.Value->Count >= info.Value->BufferLength * 3 / 4) {
+                AddCapacity();
             }
         }
 
@@ -200,17 +222,17 @@ namespace Arenas {
             return GetOffset(head);
         }
 
-        //public Enumerator GetEnumerator() {
-        //    if (Arena is null) {
-        //        throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<K, V>: list has not been properly initialized with arena reference");
-        //    }
-        //    if (!info.HasValue) {
-        //        throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<K, V>: list memory has previously been freed");
-        //    }
-        //    return new Enumerator(this);
-        //}
+        public Enumerator GetEnumerator() {
+            if (Arena is null) {
+                throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>: list has not been properly initialized with arena reference");
+            }
+            if (!info.HasValue) {
+                throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>: list memory has previously been freed");
+            }
+            return new Enumerator(this);
+        }
 
-        //IEnumerator<K, V> IEnumerable<K, V>.GetEnumerator() {
+        //IEnumerator<TKey, TValue> IEnumerable<TKey, TValue>.GetEnumerator() {
         //    return GetEnumerator();
         //}
 
@@ -221,19 +243,19 @@ namespace Arenas {
         public TValue this[TKey key] {
             get {
                 if (Arena is null) {
-                    throw new InvalidOperationException("Cannot get item at index in UnmanagedDict<K, V>: list has not been properly initialized with arena reference");
+                    throw new InvalidOperationException("Cannot get item at index in UnmanagedDict<TKey, TValue>: list has not been properly initialized with arena reference");
                 }
                 if (!info.HasValue) {
-                    throw new InvalidOperationException("Cannot get item at index in UnmanagedDict<K, V>: list memory has previously been freed");
+                    throw new InvalidOperationException("Cannot get item at index in UnmanagedDict<TKey, TValue>: list memory has previously been freed");
                 }
                 return *Get(&key, true);
             }
             set {
                 if (Arena is null) {
-                    throw new InvalidOperationException("Cannot set item at index in UnmanagedDict<K, V>: list has not been properly initialized with arena reference");
+                    throw new InvalidOperationException("Cannot set item at index in UnmanagedDict<TKey, TValue>: list has not been properly initialized with arena reference");
                 }
                 if (!info.HasValue) {
-                    throw new InvalidOperationException("Cannot set item at index in UnmanagedDict<K, V>: list memory has previously been freed");
+                    throw new InvalidOperationException("Cannot set item at index in UnmanagedDict<TKey, TValue>: list memory has previously been freed");
                 }
                 Set(&key, &value, true);
             }
@@ -272,68 +294,73 @@ namespace Arenas {
             public int Next { get { return ((UnmanagedDictEntry*)Pointer)->Next; } set { ((UnmanagedDictEntry*)Pointer)->Next = value; } }
         }
 
-        //[Serializable]
-        //public struct Enumerator : IEnumerator<K, V>, System.Collections.IEnumerator {
-        //    private ArenaList<K, V> list;
-        //    private int index;
-        //    private int version;
-        //    private T current;
+        [Serializable]
+        public struct Enumerator : IEnumerator<KeyValuePair<TKey, TValue>>, System.Collections.IEnumerator {
+            private ArenaDict<TKey, TValue> dict;
+            private int index;
+            private int offset;
+            private int version;
+            private KeyValuePair<TKey, TValue> currentKey;
 
-        //    internal Enumerator(ArenaList<K, V> list) {
-        //        this.list = list;
-        //        index = 0;
-        //        version = list.info.Value->Version;
-        //        current = default;
-        //    }
+            internal Enumerator(ArenaDict<TKey, TValue> dict) {
+                this.dict = dict;
+                index = 0;
+                offset = 0;
+                version = dict.info.Value->Version;
+                currentKey = default;
+            }
 
-        //    public void Dispose() {
-        //    }
+            public void Dispose() {
+            }
 
-        //    public bool MoveNext() {
-        //        ArenaList<K, V> localList = list;
+            public bool MoveNext() {
+                if (version != dict.info.Value->Version) {
+                    throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                }
 
-        //        if (version == localList.info.Value->Version && ((uint)index < (uint)localList.info.Value->Count)) {
-        //            current = localList[index];
-        //            index++;
-        //            return true;
-        //        }
-        //        return MoveNextRare();
-        //    }
+                while ((uint)index < (uint)dict.info.Value->BufferLength) {
+                    var entry = dict.GetOffset(offset);
 
-        //    private bool MoveNextRare() {
-        //        if (version != list.info.Value->Version) {
-        //            throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
-        //        }
+                    offset = entry.Next;
+                    if (offset == 0) {
+                        offset = ++index * dict.info.Value->EntrySize;
+                    }
 
-        //        index = list.info.Value->Count + 1;
-        //        current = default;
-        //        return false;
-        //    }
+                    if (entry.HashCode > 0) {
+                        currentKey = new KeyValuePair<TKey, TValue>(*entry.Key, *entry.Value);
+                        return true;
+                    }
+                }
 
-        //    public T Current {
-        //        get {
-        //            return current;
-        //        }
-        //    }
+                index = dict.info.Value->BufferLength + 1;
+                currentKey = default;
+                return false;
+            }
 
-        //    object System.Collections.IEnumerator.Current {
-        //        get {
-        //            if (index == 0 || index == list.info.Value->Count + 1) {
-        //                throw new InvalidOperationException("Enumeration has either not started or has already finished.");
-        //            }
-        //            return Current;
-        //        }
-        //    }
+            public KeyValuePair<TKey, TValue> Current {
+                get {
+                    return currentKey;
+                }
+            }
 
-        //    void System.Collections.IEnumerator.Reset() {
-        //        if (version != list.info.Value->Version) {
-        //            throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
-        //        }
+            object System.Collections.IEnumerator.Current {
+                get {
+                    if (index == 0 || index == dict.info.Value->BufferLength + 1) {
+                        throw new InvalidOperationException("Enumeration has either not started or has already finished.");
+                    }
+                    return Current;
+                }
+            }
 
-        //        index = 0;
-        //        current = default;
-        //    }
-        //}
+            void System.Collections.IEnumerator.Reset() {
+                if (version != dict.info.Value->Version) {
+                    throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                }
+
+                index = 0;
+                currentKey = default;
+            }
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -362,23 +389,27 @@ namespace Arenas {
         }
     }
 
-    //internal unsafe readonly struct ArenaListDebugView<K, V> where T : unmanaged {
-    //    private readonly ArenaList<K, V> list;
+    internal unsafe readonly struct ArenaDictDebugView<TKey, TValue> where TKey : unmanaged where TValue : unmanaged {
+        private readonly ArenaDict<TKey, TValue> dict;
 
-    //    public ArenaListDebugView(ArenaList<K, V> list) {
-    //        this.list = list;
-    //    }
+        public ArenaDictDebugView(ArenaDict<TKey, TValue> dict) {
+            this.dict = dict;
+        }
 
-    //    public T[] Items {
-    //        get {
-    //            var items = new T[list.Count];
-    //            list.CopyTo(items, 0);
-    //            return items;
-    //        }
-    //    }
+        public KeyValuePair<TKey, TValue>[] Items {
+            get {
+                var items = new KeyValuePair<TKey, TValue>[dict.Count];
+                int index = 0;
+                foreach (var kvp in dict) {
+                    items[index] = kvp;
+                    index++;
+                }
+                return items;
+            }
+        }
 
-    //    public int Count { get { return list.Count; } }
-    //    public Arena Arena { get { return list.Arena; } }
-    //    public bool IsAllocated { get { return list.IsAllocated; } }
-    //}
+        public int Count { get { return dict.Count; } }
+        public Arena Arena { get { return dict.Arena; } }
+        public bool IsAllocated { get { return dict.IsAllocated; } }
+    }
 }

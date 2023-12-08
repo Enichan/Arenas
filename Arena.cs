@@ -33,7 +33,7 @@ namespace Arenas {
             if (pageSize < MinimumPageSize) {
                 throw new ArgumentOutOfRangeException(nameof(pageSize), $"Arena page size must be greater than or equal to {MinimumPageSize} bytes");
             }
-            if ((uint)pageSize != NextPowerOfTwo((uint)pageSize)) {
+            if ((uint)pageSize != MemHelper.NextPowerOfTwo((uint)pageSize)) {
                 throw new ArgumentOutOfRangeException(nameof(pageSize), $"Arena page size must be a power of two");
             }
 
@@ -98,20 +98,20 @@ namespace Arenas {
             // add one 64-bit word in size to make sure this can always be 64-bit aligned
             // while keeping the original size (unused space is available if already aligned)
             size += sizeof(ulong);
-            size = MemAlign.Ceil(size, pageSize);
+            size = MemHelper.AlignCeil(size, pageSize);
 
             // allocate pointer, potentially unaligned to 64-bit word
             var alloc = (Allocator ?? DefaultAllocator).Allocate(size);
             
             var mem = alloc.Pointer;
-            var actualSize = MemAlign.Floor(alloc.SizeBytes, sizeof(ulong));
+            var actualSize = MemHelper.AlignFloor(alloc.SizeBytes, sizeof(ulong));
             Debug.Assert(actualSize >= size);
 
-            ZeroMemory(mem, (UIntPtr)alloc.SizeBytes);
+            MemHelper.ZeroMemory(mem, (UIntPtr)alloc.SizeBytes);
 
             // store the original pointer for freeing, and find 64-bit word align position
             var freePtr = mem;
-            var aligned = MemAlign.Ceil(mem, sizeof(ulong));
+            var aligned = MemHelper.AlignCeil(mem, sizeof(ulong));
 
             // page memory must be 64-bit word aligned to keep 64-bit word alignment for all items
             // allocated to the arena
@@ -217,7 +217,7 @@ namespace Arenas {
                 sizeBytes = sizeof(ulong);
             }
 
-            var nextPowerOfTwo = NextPowerOfTwo((uint)sizeBytes);
+            var nextPowerOfTwo = MemHelper.NextPowerOfTwo((uint)sizeBytes);
             var prevPowerOfTwo = nextPowerOfTwo >> 1;
 
             int powerOfTwo;
@@ -228,8 +228,8 @@ namespace Arenas {
                 powerOfTwo = (int)prevPowerOfTwo;
             }
 
-            var up = MemAlign.Ceil(sizeBytes, powerOfTwo);
-            var down = MemAlign.Floor(sizeBytes, powerOfTwo);
+            var up = MemHelper.AlignCeil(sizeBytes, powerOfTwo);
+            var down = MemHelper.AlignFloor(sizeBytes, powerOfTwo);
 
             if (Math.Abs(up - sizeBytes) <= Math.Abs(sizeBytes - down) || down == 0) {
                 sizeBytes = up;
@@ -262,7 +262,7 @@ namespace Arenas {
                 sizeBytes = sizeof(ulong);
             }
 
-            sizeBytes = MemAlign.Ceil(sizeBytes, sizeof(ulong));
+            sizeBytes = MemHelper.AlignCeil(sizeBytes, sizeof(ulong));
             var headerSize = (uint)itemHeaderSize;
 
             if (count > 1 && sizeBytes > MinimumPageSize) {
@@ -276,7 +276,7 @@ namespace Arenas {
                 // then a worst case scenario of 50% of memory being wasted would occur.
                 // while this change does cause overhead on smaller allocations, due to the
                 // minimum size of over 256 bytes for this block that overhead is at most 3%.
-                var roundedSize = NextPowerOfTwo(sizeBytes + sizeof(ulong) + headerSize);
+                var roundedSize = MemHelper.NextPowerOfTwo(sizeBytes + sizeof(ulong) + headerSize);
                 roundedSize -= headerSize + sizeof(ulong);
                 sizeBytes = roundedSize;
             }
@@ -290,7 +290,7 @@ namespace Arenas {
             // allocate items and zero memory
             RefVersion version;
             var ptr = Allocate(type, sizeof(T), sizeBytes, out version);
-            ZeroMemory(ptr, (UIntPtr)sizeBytes);
+            MemHelper.ZeroMemory(ptr, (UIntPtr)sizeBytes);
 
             Debug.Assert(((ulong)ptr % sizeof(ulong)) == 0);
 
@@ -569,29 +569,17 @@ namespace Arenas {
         #region Static
         private const int MaxFinalizedRemovalsPerAdd = 8;
 
-        [DllImport("kernel32.dll")]
-        private static extern void RtlZeroMemory(IntPtr dst, UIntPtr length);
-        private delegate void ZeroMemoryDelegate(IntPtr dst, UIntPtr length);
-
         private static ConcurrentQueue<ArenaID> finalizedRemovals;
         private static Dictionary<ArenaID, WeakReference<Arena>> arenas;
         private static object arenasLock;
-        private static ZeroMemoryDelegate ZeroMemory;
         private static readonly int itemHeaderSize;
 
         public static IMemoryAllocator DefaultAllocator { get; set; }
 
         static Arena() {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
-                ZeroMemory = RtlZeroMemory;
-            }
-            else {
-                ZeroMemory = ZeroMemPlatformIndependent;
-            }
-            
             // item header size must be 64-bit word aligned to keep 64-bit word alignment for all items
             // allocated to the arena
-            itemHeaderSize = MemAlign.Ceil(sizeof(ItemHeader), sizeof(ulong));
+            itemHeaderSize = MemHelper.AlignCeil(sizeof(ItemHeader), sizeof(ulong));
             Debug.Assert((itemHeaderSize % sizeof(ulong)) == 0);
 
             finalizedRemovals = new ConcurrentQueue<ArenaID>();
@@ -683,49 +671,6 @@ namespace Arenas {
                 }
 
                 return arena;
-            }
-        }
-
-        // http://graphics.stanford.edu/%7Eseander/bithacks.html#RoundUpPowerOf2
-        private static ulong NextPowerOfTwo(ulong v) {
-            v--;
-            v |= v >> 1;
-            v |= v >> 2;
-            v |= v >> 4;
-            v |= v >> 8;
-            v |= v >> 16;
-            v |= v >> 32;
-            v++;
-            return v;
-        }
-
-        private static void ZeroMemPlatformIndependent(IntPtr ptr, UIntPtr length) {
-            ulong size = (ulong)length;
-
-            // clear to word alignment
-            var byteptr = (byte*)ptr;
-            var bytes = (int)((ulong)byteptr & 0b111);
-            for (int i = 0; i < bytes; i++, byteptr++) {
-                *byteptr = 0;
-            }
-
-            size -= (ulong)bytes;
-
-            // clear words
-            var count = size / sizeof(ulong);
-            var longptr = (ulong*)byteptr;
-
-            for (ulong i = 0; i < count; i++, longptr++) {
-                *longptr = 0;
-            }
-
-            size -= count * sizeof(ulong);
-
-            // clear remaining bytes
-            byteptr = (byte*)longptr;
-            bytes = (int)size;
-            for (int i = 0; i < bytes; i++, byteptr++) {
-                *byteptr = 0;
             }
         }
         #endregion
