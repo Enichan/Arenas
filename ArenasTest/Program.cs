@@ -16,6 +16,8 @@ namespace ArenasTest {
                 dict.Add(69, 12);
                 dict.Add(345, 24);
                 dict.Add(10, 666);
+                dict[10] = 123;
+                Console.WriteLine(dict[10]);
 
                 // allocate some people in the arena
                 var john = arena.Allocate(new Person());

@@ -115,43 +115,70 @@ namespace Arenas {
             if (!info.HasValue) {
                 throw new InvalidOperationException("Cannot Add item to UnmanagedDict<K, V>: list memory has previously been freed");
             }
+            Set(&key, &value, false);
+        }
 
-            var hashcode = 4297586;// key.GetHashCode();
-            if (hashcode == 0) hashcode = 1;
-
-            var index = (int)HashToIndex((uint)hashcode, info.Value->Shift);
-            var entry = GetIndex(index);
+        private bool TryGetEntry(TKey* key, int hashCode, out Entry entry) {
+            var index = (int)HashToIndex((uint)hashCode, info.Value->Shift);
+            entry = GetIndex(index);
 
             if (entry.HashCode == 0) {
                 // no value at index, insert
-                entry.HashCode = hashcode;
-                *entry.Key = key;
-                *entry.Value = value;
+                return true;
             }
-            else if (entry.HashCode == hashcode && EqualityComparer<TKey>.Default.Equals(*entry.Key, key)) {
-                // duplicate key at index
-                throw new ArgumentException("An element with that key already exists");
+            else if (entry.HashCode == hashCode && EqualityComparer<TKey>.Default.Equals(*entry.Key, *key)) {
+                // found identical key at index
+                return true;
             }
             else {
                 var next = entry.Next;
                 while (next > 0) {
                     entry = GetOffset(next);
-                    if (entry.HashCode == hashcode && EqualityComparer<TKey>.Default.Equals(*entry.Key, key)) {
-                        // duplicate key in bucket
-                        throw new ArgumentException("An element with that key already exists");
+                    if (entry.HashCode == hashCode && EqualityComparer<TKey>.Default.Equals(*entry.Key, *key)) {
+                        // found identical key in bucket
+                        return true;
                     }
                     next = entry.Next;
                 }
+                return false;
+            }
+        }
 
+        private int GetHashCode(TKey* key) {
+            var hashCode = key->GetHashCode();
+            if (hashCode == 0) hashCode = 1;
+            return hashCode;
+        }
+
+        private TValue* Get(TKey* key, bool throwIfNotFound) {
+            var hashCode = GetHashCode(key);
+
+            if ((!TryGetEntry(key, hashCode, out var entry) || entry.HashCode == 0) && throwIfNotFound) {
+                // no key found, add to bucket
+                throw new KeyNotFoundException();
+            }
+
+            return entry.Value;
+        }
+
+        private void Set(TKey* key, in TValue* value, bool allowDuplicates) {
+            var hashCode = GetHashCode(key);
+
+            if (!TryGetEntry(key, hashCode, out var entry)) {
                 // no key found, add to bucket
                 var head = GetHead();
                 info.Value->Head = head.Next;
                 entry.Next = head.Offset;
 
-                head.HashCode = hashcode;
+                head.HashCode = hashCode;
                 head.Next = 0;
-                *head.Key = key;
-                *head.Value = value;
+                *head.Key = *key;
+                *head.Value = *value;
+            }
+            else {
+                entry.HashCode = hashCode;
+                *entry.Key = *key;
+                *entry.Value = *value;
             }
         }
 
@@ -199,7 +226,7 @@ namespace Arenas {
                 if (!info.HasValue) {
                     throw new InvalidOperationException("Cannot get item at index in UnmanagedDict<K, V>: list memory has previously been freed");
                 }
-                throw new NotImplementedException();
+                return *Get(&key, true);
             }
             set {
                 if (Arena is null) {
@@ -208,7 +235,7 @@ namespace Arenas {
                 if (!info.HasValue) {
                     throw new InvalidOperationException("Cannot set item at index in UnmanagedDict<K, V>: list memory has previously been freed");
                 }
-                throw new NotImplementedException();
+                Set(&key, &value, true);
             }
         }
 
