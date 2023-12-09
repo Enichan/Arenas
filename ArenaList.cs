@@ -24,11 +24,10 @@ namespace Arenas {
             info = arena.Allocate(new UnmanagedList());
 
             var minCapacity = Math.Max(capacity, defaultCapacity);
-            var itemSize = TypeInfo.GenerateTypeInfo<T>().Size;
-            var itemsRef = arena.AllocCount<byte>(minCapacity * itemSize);
+            var itemsRef = arena.AllocCount<T>(minCapacity);
 
             info.Value->Items = (UnmanagedRef)itemsRef;
-            info.Value->Capacity = itemsRef.ElementCount / itemSize; // we might get more capacity than requested
+            info.Value->Capacity = itemsRef.ElementCount; // we might get more capacity than requested
         }
 
         public void Free() {
@@ -75,9 +74,8 @@ namespace Arenas {
             var newMinCapacity = info.Value->Capacity * 2;
 
             var items = info.Value->Items;
-            var itemSize = TypeInfo.GenerateTypeInfo<T>().Size;
-            var newItems = Arena.AllocCount<byte>(newMinCapacity * itemSize);
-            info.Value->Capacity = newItems.ElementCount / itemSize; // we might get more capacity than requested
+            var newItems = Arena.AllocCount<T>(newMinCapacity);
+            info.Value->Capacity = newItems.ElementCount; // we might get more capacity than requested
 
             var newSize = newItems.Size;
             Buffer.MemoryCopy((void*)items.Value, newItems.Value, newSize, newSize);
@@ -266,13 +264,13 @@ namespace Arenas {
             }
         }
 
-        public int Count { 
+        public int Count {
             get {
                 if (!info.HasValue) {
                     return 0;
                 }
                 return info.Value->Count;
-            } 
+            }
         }
 
         public bool IsAllocated { get { return info.HasValue; } }
