@@ -117,9 +117,9 @@ namespace Arenas {
             MemHelper.ZeroMemory(info.Value->ItemsBuffer.Value, info.Value->Bump);
         }
 
-        public void TrimExcess(int capacity = 0) {
-            throw new NotImplementedException();
-        }
+        // TODO: implement
+        //public void TrimExcess(int capacity = 0) {
+        //}
 
         private void AddCapacity() {
             // copy into new dictionary

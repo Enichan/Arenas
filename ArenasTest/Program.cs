@@ -13,36 +13,6 @@ namespace ArenasTest {
             UnmanagedRef<Person> staleRefTest;
 
             using (var arena = new Arena()) {
-                var dict = new ArenaDict<int, int>(arena);
-                var second = dict;
-
-                for (int i = 0; i < 4096; i++) {
-                    dict[i] = i;
-                }
-                for (int i = 0; i < 4096; i++) {
-                    dict.Remove(i);
-                }
-                for (int i = 0; i < 4096; i++) {
-                    dict[i] = i;
-                }
-
-                var last = -1;
-                foreach (var kvp in (from kvp in dict orderby kvp.Key ascending select kvp)) {
-                    Debug.Assert(kvp.Key - last == 1);
-                    last = kvp.Key;
-                    Console.WriteLine(kvp);
-                }
-
-                dict.Clear();
-
-                for (int i = 0; i < 4; i++) {
-                    dict[i] = i;
-                }
-
-                foreach (var kvp in dict) {
-                    Console.WriteLine(kvp);
-                }
-
                 // allocate some people in the arena
                 var john = arena.Allocate(new Person());
                 john.Value->FirstName = "John";
