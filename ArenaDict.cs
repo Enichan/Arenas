@@ -121,7 +121,7 @@ namespace Arenas {
             }
 
             var items = self->ItemsBuffer.Value;
-            if (items == null) {
+            if (items == IntPtr.Zero) {
                 throw new InvalidOperationException("Cannot Clear UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
 
@@ -206,7 +206,7 @@ namespace Arenas {
             }
 
             var items = self->ItemsBuffer.Value;
-            if (items == null) {
+            if (items == IntPtr.Zero) {
                 throw new InvalidOperationException("Cannot Add item to UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
 
@@ -228,7 +228,7 @@ namespace Arenas {
             }
 
             var items = self->ItemsBuffer.Value;
-            if (items == null) {
+            if (items == IntPtr.Zero) {
                 throw new InvalidOperationException("Cannot TryGetValue on UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
 
@@ -252,7 +252,7 @@ namespace Arenas {
             }
 
             var items = self->ItemsBuffer.Value;
-            if (items == null) {
+            if (items == IntPtr.Zero) {
                 throw new InvalidOperationException("Cannot ContainsKey on UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
 
@@ -283,7 +283,7 @@ namespace Arenas {
             }
 
             var items = self->ItemsBuffer.Value;
-            if (items == null) {
+            if (items == IntPtr.Zero) {
                 throw new InvalidOperationException("Cannot Contains key value pair on UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
 
@@ -389,7 +389,7 @@ namespace Arenas {
             }
 
             var items = self->ItemsBuffer.Value;
-            if (items == null) {
+            if (items == IntPtr.Zero) {
                 throw new InvalidOperationException("Cannot Remove item from UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
 
@@ -449,7 +449,7 @@ namespace Arenas {
             }
 
             var items = self->ItemsBuffer.Value;
-            if (items == null) {
+            if (items == IntPtr.Zero) {
                 throw new InvalidOperationException("Cannot Remove key value pair from UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
 
@@ -473,7 +473,7 @@ namespace Arenas {
             }
 
             var items = self->ItemsBuffer.Value;
-            if (items == null) {
+            if (items == IntPtr.Zero) {
                 throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
 
@@ -509,7 +509,7 @@ namespace Arenas {
             }
 
             var items = self->ItemsBuffer.Value;
-            if (items == null) {
+            if (items == IntPtr.Zero) {
                 throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
 
@@ -536,7 +536,7 @@ namespace Arenas {
                 }
 
                 var items = self->ItemsBuffer.Value;
-                if (items == null) {
+                if (items == IntPtr.Zero) {
                     throw new InvalidOperationException("Cannot get item at index in UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
                 }
 
@@ -553,7 +553,7 @@ namespace Arenas {
                 }
 
                 var items = self->ItemsBuffer.Value;
-                if (items == null) {
+                if (items == IntPtr.Zero) {
                     throw new InvalidOperationException("Cannot set item at index in UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
                 }
 
@@ -583,7 +583,7 @@ namespace Arenas {
                 }
 
                 var items = self->ItemsBuffer.Value;
-                if (items == null) {
+                if (items == IntPtr.Zero) {
                     throw new InvalidOperationException("Cannot get Keys for UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
                 }
 
@@ -602,7 +602,7 @@ namespace Arenas {
                 }
 
                 var items = self->ItemsBuffer.Value;
-                if (items == null) {
+                if (items == IntPtr.Zero) {
                     throw new InvalidOperationException("Cannot get Values for UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
                 }
 
@@ -678,7 +678,7 @@ namespace Arenas {
                 }
 
                 var itemsPtr = dictPtr->ItemsBuffer.Value;
-                if (itemsPtr == null) {
+                if (itemsPtr == IntPtr.Zero) {
                     throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                 }
 
@@ -752,7 +752,7 @@ namespace Arenas {
                 }
 
                 var items = self->ItemsBuffer.Value;
-                if (items == null) {
+                if (items == IntPtr.Zero) {
                     throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>.KeyCollection: dictionary's backing array has previously been freed");
                 }
 
@@ -770,7 +770,7 @@ namespace Arenas {
                 }
 
                 var items = self->ItemsBuffer.Value;
-                if (items == null) {
+                if (items == IntPtr.Zero) {
                     throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>.KeyCollection: dictionary's backing array has previously been freed");
                 }
 
@@ -842,7 +842,7 @@ namespace Arenas {
                     }
 
                     var itemsPtr = dictPtr->ItemsBuffer.Value;
-                    if (itemsPtr == null) {
+                    if (itemsPtr == IntPtr.Zero) {
                         throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                     }
 
@@ -916,7 +916,7 @@ namespace Arenas {
                 }
 
                 var items = self->ItemsBuffer.Value;
-                if (items == null) {
+                if (items == IntPtr.Zero) {
                     throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>.ValueCollection: dictionary's backing array has previously been freed");
                 }
 
@@ -934,7 +934,7 @@ namespace Arenas {
                 }
 
                 var items = self->ItemsBuffer.Value;
-                if (items == null) {
+                if (items == IntPtr.Zero) {
                     throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>.ValueCollection: dictionary's backing array has previously been freed");
                 }
 
@@ -1006,7 +1006,7 @@ namespace Arenas {
                     }
 
                     var itemsPtr = dictPtr->ItemsBuffer.Value;
-                    if (itemsPtr == null) {
+                    if (itemsPtr == IntPtr.Zero) {
                         throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                     }
 
