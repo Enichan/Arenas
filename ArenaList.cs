@@ -21,6 +21,10 @@ namespace Arenas {
             if (arena is null) {
                 throw new ArgumentNullException(nameof(arena));
             }
+            if (TypeInfo.GenerateTypeInfo<T>().IsArenaContents) {
+                throw new NotSupportedException("ArenaList cannot store items which implement IArenaContents. Please use UnmanagedRef instead.");
+            }
+
             info = arena.Allocate(new UnmanagedList());
 
             var minCapacity = Math.Max(capacity, defaultCapacity);

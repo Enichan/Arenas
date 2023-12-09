@@ -22,6 +22,16 @@ namespace Arenas {
                 throw new ArgumentNullException(nameof(arena));
             }
 
+            var typeK = TypeInfo.GenerateTypeInfo<TKey>();
+            var typeV = TypeInfo.GenerateTypeInfo<TValue>();
+
+            if (typeK.IsArenaContents) {
+                throw new NotSupportedException("ArenaList cannot store keys which implement IArenaContents. Please use UnmanagedRef instead.");
+            }
+            if (typeV.IsArenaContents) {
+                throw new NotSupportedException("ArenaList cannot store values which implement IArenaContents. Please use UnmanagedRef instead.");
+            }
+
             // first allocate our info object
             info = arena.Allocate(new UnmanagedDict());
 
@@ -43,10 +53,8 @@ namespace Arenas {
 
             // because .NET standard can't have composed unmanaged types we cant allocate a memory area
             // that is a series of entry structs, and instead have to interleave entry headers with key
-            // and value manually. we generate type info here in order to get all the offsets and sizes
+            // and value manually. we use our type info here in order to get all the offsets and sizes
             // and such that are needed
-            var typeK = TypeInfo.GenerateTypeInfo<TKey>();
-            var typeV = TypeInfo.GenerateTypeInfo<TValue>();
             var entryInfo = TypeInfo.GenerateTypeInfo<UnmanagedDictEntry>();
             var entrySize = MemHelper.AlignCeil(typeK.Size + typeV.Size + entryInfo.Size, sizeof(ulong));
 
