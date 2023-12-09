@@ -302,14 +302,14 @@ namespace Arenas {
         }
         #endregion
 
-        public IntPtr this[int index] {
-            get {
-                if (index < 0 || index >= ElementCount) {
-                    throw new ArgumentOutOfRangeException(nameof(index));
-                }
-                return Value + index;
-            }
-        }
+        //public IntPtr this[int index] {
+        //    get {
+        //        if (index < 0 || index >= ElementCount) {
+        //            throw new ArgumentOutOfRangeException(nameof(index));
+        //        }
+        //        return Value + index;
+        //    }
+        //}
 
         public Type Type { 
             get {

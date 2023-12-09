@@ -9,6 +9,8 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Arenas {
+    using static UnmanagedListTypes;
+
     [DebuggerTypeProxy(typeof(ArenaListDebugView<>))]
     public unsafe struct ArenaList<T> : IList<T> where T : unmanaged {
         private const int defaultCapacity = 4;
@@ -19,6 +21,10 @@ namespace Arenas {
             if (arena is null) {
                 throw new ArgumentNullException(nameof(arena));
             }
+            if (TypeInfo.GenerateTypeInfo<T>().IsArenaContents) {
+                throw new NotSupportedException("ArenaList cannot store items which implement IArenaContents. Please use UnmanagedRef instead.");
+            }
+
             info = arena.Allocate(new UnmanagedList());
 
             var minCapacity = Math.Max(capacity, defaultCapacity);
@@ -36,9 +42,11 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot Free UnmanagedList<T>: list memory has previously been freed");
             }
 
+            info.Value->Version++;
             var items = info.Value->Items;
             Arena.Free(items);
             Arena.Free(info);
+            info = default;
         }
 
         public void Clear() {
@@ -260,13 +268,13 @@ namespace Arenas {
             }
         }
 
-        public int Count { 
+        public int Count {
             get {
                 if (!info.HasValue) {
                     return 0;
                 }
                 return info.Value->Count;
-            } 
+            }
         }
 
         public bool IsAllocated { get { return info.HasValue; } }
@@ -337,31 +345,33 @@ namespace Arenas {
         }
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    public struct UnmanagedList {
-        public UnmanagedRef Items;
-        public int Count;
-        public int Capacity;
-        public int Version;
-    }
-
-    internal unsafe readonly struct ArenaListDebugView<T> where T : unmanaged {
-        private readonly ArenaList<T> list;
-
-        public ArenaListDebugView(ArenaList<T> list) {
-            this.list = list;
+    public static class UnmanagedListTypes {
+        [StructLayout(LayoutKind.Sequential)]
+        public struct UnmanagedList {
+            public UnmanagedRef Items;
+            public int Count;
+            public int Capacity;
+            public int Version;
         }
 
-        public T[] Items {
-            get {
-                var items = new T[list.Count];
-                list.CopyTo(items, 0);
-                return items;
+        internal unsafe readonly struct ArenaListDebugView<T> where T : unmanaged {
+            private readonly ArenaList<T> list;
+
+            public ArenaListDebugView(ArenaList<T> list) {
+                this.list = list;
             }
-        }
 
-        public int Count { get { return list.Count; } }
-        public Arena Arena { get { return list.Arena; } }
-        public bool IsAllocated { get { return list.IsAllocated; } }
+            public T[] Items {
+                get {
+                    var items = new T[list.Count];
+                    list.CopyTo(items, 0);
+                    return items;
+                }
+            }
+
+            public int Count { get { return list.Count; } }
+            public Arena Arena { get { return list.Arena; } }
+            public bool IsAllocated { get { return list.IsAllocated; } }
+        }
     }
 }
