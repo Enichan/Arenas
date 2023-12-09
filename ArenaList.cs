@@ -75,9 +75,9 @@ namespace Arenas {
             Buffer.MemoryCopy(source, dest, destSize, bytesToCopy);
         }
 
-        private T* AddCapacity(UnmanagedList* self, T* items) {
+        private void AddCapacity(UnmanagedList* self, ref T* items) {
             if (self->Count < self->Capacity) {
-                return items;
+                return;
             }
 
             var newMinCapacity = self->Capacity * 2;
@@ -93,7 +93,7 @@ namespace Arenas {
             Arena.Free(self->Items);
             self->Items = (UnmanagedRef)newItems;
 
-            return newItemsPtr;
+            items = newItemsPtr;
         }
 
         public void Add(T item) {
@@ -108,11 +108,11 @@ namespace Arenas {
 
             var items = (T*)self->Items.Value;
             if (items == null) {
-                throw new InvalidOperationException("Cannot Add item to UnmanagedList<T>: list array has previously been freed");
+                throw new InvalidOperationException("Cannot Add item to UnmanagedList<T>: list's backing array has previously been freed");
             }
 
             self->Version++;
-            items = AddCapacity(self, items);
+            AddCapacity(self, ref items);
             items[self->Count] = item;
             self->Count++;
         }
@@ -129,7 +129,7 @@ namespace Arenas {
 
             var items = (T*)self->Items.Value;
             if (items == null) {
-                throw new InvalidOperationException("Cannot Insert item into UnmanagedList<T>: list array has previously been freed");
+                throw new InvalidOperationException("Cannot Insert item into UnmanagedList<T>: list's backing array has previously been freed");
             }
 
             if (index < 0 || index >= Count) {
@@ -137,7 +137,7 @@ namespace Arenas {
             }
 
             self->Version++;
-            items = AddCapacity(self, items);
+            AddCapacity(self, ref items);
 
             if (index == Count) {
                 items[self->Count] = item;
@@ -160,15 +160,15 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot RemoveAt in UnmanagedList<T>: list memory has previously been freed");
             }
 
-            RemoveAt(self, index);
-        }
-
-        private void RemoveAt(UnmanagedList* self, int index) {
             var items = (T*)self->Items.Value;
             if (items == null) {
-                throw new InvalidOperationException("Cannot RemoveAt in UnmanagedList<T>: list array has previously been freed");
+                throw new InvalidOperationException("Cannot RemoveAt in UnmanagedList<T>: list's backing array has previously been freed");
             }
 
+            RemoveAt(self, items, index);
+        }
+
+        private void RemoveAt(UnmanagedList* self, T* items, int index) {
             if (index < 0 || index >= Count) {
                 throw new ArgumentOutOfRangeException(nameof(index));
             }
@@ -194,12 +194,17 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot Remove item from UnmanagedList<T>: list memory has previously been freed");
             }
 
-            var index = IndexOf(self, item);
+            var items = (T*)self->Items.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot Remove item from UnmanagedList<T>: list's backing array has previously been freed");
+            }
+
+            var index = IndexOf(self, items, item);
             if (index < 0) {
                 return false;
             }
 
-            RemoveAt(self, index);
+            RemoveAt(self, items, index);
             return true;
         }
 
@@ -213,15 +218,15 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot get IndexOf item in UnmanagedList<T>: list memory has previously been freed");
             }
 
-            return IndexOf(self, item);
-        }
-
-        private int IndexOf(UnmanagedList* self, T item) {
             var items = (T*)self->Items.Value;
             if (items == null) {
-                throw new InvalidOperationException("Cannot get IndexOf item in UnmanagedList<T>: list array has previously been freed");
+                throw new InvalidOperationException("Cannot get IndexOf item in UnmanagedList<T>: list's backing array has previously been freed");
             }
 
+            return IndexOf(self, items, item);
+        }
+
+        private int IndexOf(UnmanagedList* self, T* items, T item) {
             var count = Count;
             var cur = items;
 
@@ -244,7 +249,12 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot check if UnmanagedList<T> Contains item: list memory has previously been freed");
             }
 
-            return IndexOf(self, item) >= 0;
+            var items = (T*)self->Items.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot check if UnmanagedList<T> Contains item: list's backing array has previously been freed");
+            }
+
+            return IndexOf(self, items, item) >= 0;
         }
 
         public void CopyTo(T[] dest) {
@@ -267,7 +277,7 @@ namespace Arenas {
 
             var items = self->Items;
             if (!items.HasValue) {
-                throw new InvalidOperationException("Cannot CopyTo array from UnmanagedList<T>: list array has previously been freed");
+                throw new InvalidOperationException("Cannot CopyTo array from UnmanagedList<T>: list's backing array has previously been freed");
             }
 
             if (count < 0) {
@@ -295,7 +305,7 @@ namespace Arenas {
 
             var items = self->Items;
             if (!items.HasValue) {
-                throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedList<T>: list array has previously been freed");
+                throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedList<T>: list's backing array has previously been freed");
             }
 
             return new Enumerator(this);
@@ -322,7 +332,7 @@ namespace Arenas {
 
                 var items = (T*)self->Items.Value;
                 if (items == null) {
-                    throw new InvalidOperationException("Cannot get item at index in UnmanagedList<T>: list array has previously been freed");
+                    throw new InvalidOperationException("Cannot get item at index in UnmanagedList<T>: list's backing array has previously been freed");
                 }
 
                 if (index < 0 || index >= self->Count) {
@@ -343,7 +353,7 @@ namespace Arenas {
 
                 var items = (T*)self->Items.Value;
                 if (items == null) {
-                    throw new InvalidOperationException("Cannot get item at index in UnmanagedList<T>: list array has previously been freed");
+                    throw new InvalidOperationException("Cannot get item at index in UnmanagedList<T>: list's backing array has previously been freed");
                 }
 
                 if (index < 0 || index >= self->Count) {

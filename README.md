@@ -65,8 +65,8 @@ using (var arena = new Arena()) {
         dict[random.Next(1000)] = random.Next(1000);
     }
 
-    Console.WriteLine("Values in dictionary:");
-    foreach (var kvp in dict) {
+    Console.WriteLine("Values in dictionary (sorted by key ascending):");
+    foreach (var kvp in from entry in dict orderby entry.Key ascending select entry) {
         Console.WriteLine(kvp);
     }
 

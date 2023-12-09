@@ -130,6 +130,8 @@ namespace Arenas {
             self->Bump = self->BackingArrayLength * self->EntrySize;
             self->Head = nullOffset;
 
+            // TODO: would it be enough to only zero out the hashCode? would that be faster?
+
             // zero backing array memory (Bump has been set to the end of the backing array)
             // remaining storage space doesn't need to be zeroed because the bump allocator
             // zeroes out newly allocated entries
@@ -140,11 +142,13 @@ namespace Arenas {
         //public void TrimExcess(int capacity = 0) {
         //}
 
-        private void AddCapacity(UnmanagedDict* self, IntPtr items) {
+        private void AddCapacity(UnmanagedDict* self, ref IntPtr items) {
             // copy into new dictionary
             var newDict = new ArenaDict<TKey, TValue>(info.Arena, self->BackingArrayLength * 2);
-            foreach (var kvp in this) {
-                newDict.Add(kvp.Key, kvp.Value);
+
+            var entryEnumerator = new FastInternalEnumerator(this);
+            while (entryEnumerator.GetNextEntry(out var entry)) {
+                newDict.Add(*entry.Key, *entry.Value);
             }
 
             // free old items buffer
@@ -155,6 +159,8 @@ namespace Arenas {
 
             // free new dictionary's info
             Arena.Free(newDict.info);
+
+            items = self->ItemsBuffer.Value;
         }
 
         private int GetHashCode(TKey* key) {
@@ -210,7 +216,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot Add item to UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
 
-            Set(self, items, &key, &value, false);
+            Set(self, ref items, &key, &value, false);
         }
 
         void ICollection<KeyValuePair<TKey, TValue>>.Add(KeyValuePair<TKey, TValue> item) {
@@ -263,12 +269,22 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot ContainsValue on UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot ContainsValue on UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
             }
-            foreach (var kvp in this) {
-                if (EqualityComparer<TValue>.Default.Equals(value, kvp.Value)) return true;
+
+            var items = self->ItemsBuffer.Value;
+            if (items == IntPtr.Zero) {
+                throw new InvalidOperationException("Cannot ContainsValue on UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
+
+            var entryEnumerator = new FastInternalEnumerator(this);
+            while (entryEnumerator.GetNextEntry(out var entry)) {
+                if (EqualityComparer<TValue>.Default.Equals(value, *entry.Value)) return true;
+            }
+
             return false;
         }
 
@@ -310,7 +326,7 @@ namespace Arenas {
             return entry.Value;
         }
 
-        private void Set(UnmanagedDict* self, IntPtr items, TKey* key, in TValue* value, bool allowDuplicates) {
+        private void Set(UnmanagedDict* self, ref IntPtr items, TKey* key, in TValue* value, bool allowDuplicates) {
             var hashCode = GetHashCode(key);
 
             if (!TryGetEntry(self, items, key, hashCode, out var entry, out _)) {
@@ -339,7 +355,7 @@ namespace Arenas {
             self->Version++;
             self->Count++;
             if (self->Count >= self->BackingArrayLength * 3 / 4) {
-                AddCapacity(self, items);
+                AddCapacity(self, ref items);
             }
         }
 
@@ -464,17 +480,17 @@ namespace Arenas {
 
         void ICollection<KeyValuePair<TKey, TValue>>.CopyTo(KeyValuePair<TKey, TValue>[] array, int index) {
             if (Arena is null) {
-                throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
+                throw new InvalidOperationException("Cannot CopyTo key value pairs on UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
             }
 
             var self = info.Value;
             if (self == null) {
-                throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
+                throw new InvalidOperationException("Cannot CopyTo key value pairs on UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
             }
 
             var items = self->ItemsBuffer.Value;
             if (items == IntPtr.Zero) {
-                throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+                throw new InvalidOperationException("Cannot CopyTo key value pairs on UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
 
             if (array == null) {
@@ -493,8 +509,9 @@ namespace Arenas {
                 throw new ArgumentException("Destination array is not long enough to copy all the items in the collection. Check array index and length.", nameof(array));
             }
 
-            foreach (var kvp in this) {
-                array[index++] = kvp;
+            var entryEnumerator = new FastInternalEnumerator(this);
+            while (entryEnumerator.GetNextEntry(out var entry)) {
+                array[index++] = new KeyValuePair<TKey, TValue>(*entry.Key, *entry.Value);
             }
         }
 
@@ -557,7 +574,7 @@ namespace Arenas {
                     throw new InvalidOperationException("Cannot set item at index in UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
                 }
 
-                Set(self, items, &key, &value, true);
+                Set(self, ref items, &key, &value, true);
             }
         }
 
@@ -654,6 +671,7 @@ namespace Arenas {
             private ArenaDict<TKey, TValue> dict;
             private int index;
             private int offset;
+            private int headOffset;
             private int version;
             private int count;
             private KeyValuePair<TKey, TValue> currentKey;
@@ -663,6 +681,7 @@ namespace Arenas {
                 var dictPtr = dict.info.Value;
                 index = 0;
                 offset = 0;
+                headOffset = 0;
                 version = dictPtr->Version;
                 count = dictPtr->BackingArrayLength;
                 currentKey = default;
@@ -692,7 +711,9 @@ namespace Arenas {
                         // if the position of the next entry is zero then there are no further
                         // entries at this index, increment the index and set the new offset to
                         // the head of the list (the entry in the backing array)
-                        offset = ++index * dictPtr->EntrySize;
+                        headOffset += dictPtr->EntrySize;
+                        offset = headOffset;
+                        index++;
                     }
 
                     // only entries with a hashcode which isn't zero are valid entries
@@ -729,7 +750,60 @@ namespace Arenas {
                 }
 
                 index = 0;
+                offset = 0;
+                headOffset = 0;
                 currentKey = default;
+            }
+        }
+
+        /// <summary>
+        /// Used in place of `foreach (var kvp in this)` internally since it's more efficient
+        /// </summary>
+        private struct FastInternalEnumerator {
+            private ArenaDict<TKey, TValue> dict;
+            private int index;
+            private int offset;
+            private int headOffset;
+            private int count;
+            private UnmanagedDict* dictPtr;
+            private IntPtr itemsPtr;
+
+            internal FastInternalEnumerator(ArenaDict<TKey, TValue> dict) {
+                this.dict = dict;
+                dictPtr = dict.info.Value;
+                index = 0;
+                offset = 0;
+                headOffset = 0;
+                count = dictPtr->BackingArrayLength;
+                itemsPtr = dictPtr->ItemsBuffer.Value;
+            }
+
+            public bool GetNextEntry(out Entry result) {
+                while ((uint)index < (uint)count) {
+                    // get current entry
+                    var entry = dict.GetOffset(dictPtr, itemsPtr, offset);
+
+                    // move to next entry associated with the current index
+                    offset = entry.Next;
+                    if (offset == nullOffset) {
+                        // if the position of the next entry is zero then there are no further
+                        // entries at this index, increment the index and set the new offset to
+                        // the head of the list (the entry in the backing array)
+                        headOffset += dictPtr->EntrySize;
+                        offset = headOffset;
+                        index++;
+                    }
+
+                    // only entries with a hashcode which isn't zero are valid entries
+                    if (entry.HashCode != noneHashCode) {
+                        result = entry;
+                        return true;
+                    }
+                }
+
+                index = count + 1;
+                result = default;
+                return false;
             }
         }
 
@@ -790,8 +864,9 @@ namespace Arenas {
                     throw new ArgumentException("Destination array is not long enough to copy all the items in the collection. Check array index and length.", nameof(array));
                 }
 
-                foreach (var key in this) {
-                    array[index++] = key;
+                var entryEnumerator = new FastInternalEnumerator(dict);
+                while (entryEnumerator.GetNextEntry(out var entry)) {
+                    array[index++] = *entry.Key;
                 }
             }
 
@@ -818,6 +893,7 @@ namespace Arenas {
                 private ArenaDict<TKey, TValue> dict;
                 private int index;
                 private int offset;
+                private int headOffset;
                 private int version;
                 private int count;
                 private TKey currentKey;
@@ -827,6 +903,7 @@ namespace Arenas {
                     var dictPtr = dict.info.Value;
                     index = 0;
                     offset = 0;
+                    headOffset = 0;
                     version = dictPtr->Version;
                     count = dictPtr->BackingArrayLength;
                     currentKey = default;
@@ -856,7 +933,9 @@ namespace Arenas {
                             // if the position of the next entry is zero then there are no further
                             // entries at this index, increment the index and set the new offset to
                             // the head of the list (the entry in the backing array)
-                            offset = ++index * dictPtr->EntrySize;
+                            headOffset += dictPtr->EntrySize;
+                            offset = headOffset;
+                            index++;
                         }
 
                         // only entries with a hashcode which isn't zero are valid entries
@@ -893,6 +972,8 @@ namespace Arenas {
                     }
 
                     index = 0;
+                    offset = 0;
+                    headOffset = 0;
                     currentKey = default;
                 }
             }
@@ -954,8 +1035,9 @@ namespace Arenas {
                     throw new ArgumentException("Destination array is not long enough to copy all the items in the collection. Check array index and length.", nameof(array));
                 }
 
-                foreach (var val in this) {
-                    array[index++] = val;
+                var entryEnumerator = new FastInternalEnumerator(dict);
+                while (entryEnumerator.GetNextEntry(out var entry)) {
+                    array[index++] = *entry.Value;
                 }
             }
 
@@ -982,6 +1064,7 @@ namespace Arenas {
                 private ArenaDict<TKey, TValue> dict;
                 private int index;
                 private int offset;
+                private int headOffset;
                 private int version;
                 private int count;
                 private TValue currentValue;
@@ -991,6 +1074,7 @@ namespace Arenas {
                     var dictPtr = dict.info.Value;
                     index = 0;
                     offset = 0;
+                    headOffset = 0;
                     version = dictPtr->Version;
                     count = dictPtr->BackingArrayLength;
                     currentValue = default;
@@ -1020,7 +1104,9 @@ namespace Arenas {
                             // if the position of the next entry is zero then there are no further
                             // entries at this index, increment the index and set the new offset to
                             // the head of the list (the entry in the backing array)
-                            offset = ++index * dictPtr->EntrySize;
+                            headOffset += dictPtr->EntrySize;
+                            offset = headOffset;
+                            index++;
                         }
 
                         // only entries with a hashcode which isn't zero are valid entries
@@ -1057,6 +1143,8 @@ namespace Arenas {
                     }
 
                     index = 0;
+                    offset = 0;
+                    headOffset = 0;
                     currentValue = default;
                 }
             }
