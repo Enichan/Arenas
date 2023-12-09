@@ -286,11 +286,13 @@ namespace Arenas {
             private ArenaList<T> list;
             private int index;
             private int version;
+            private int count;
             private T current;
 
             internal Enumerator(ArenaList<T> list) {
                 this.list = list;
                 index = 0;
+                count = list.info.Value->Count;
                 version = list.info.Value->Version;
                 current = default;
             }
@@ -301,7 +303,7 @@ namespace Arenas {
             public bool MoveNext() {
                 ArenaList<T> localList = list;
 
-                if (version == localList.info.Value->Version && ((uint)index < (uint)localList.info.Value->Count)) {
+                if (list.info.HasValue && version == localList.info.Value->Version && ((uint)index < (uint)count)) {
                     current = localList[index];
                     index++;
                     return true;
@@ -310,11 +312,11 @@ namespace Arenas {
             }
 
             private bool MoveNextRare() {
-                if (version != list.info.Value->Version) {
+                if (!list.info.HasValue || version != list.info.Value->Version) {
                     throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                 }
 
-                index = list.info.Value->Count + 1;
+                index = count + 1;
                 current = default;
                 return false;
             }
@@ -327,7 +329,7 @@ namespace Arenas {
 
             object System.Collections.IEnumerator.Current {
                 get {
-                    if (index == 0 || index == list.info.Value->Count + 1) {
+                    if (index == 0 || index == count + 1) {
                         throw new InvalidOperationException("Enumeration has either not started or has already finished.");
                     }
                     return Current;
@@ -335,7 +337,7 @@ namespace Arenas {
             }
 
             void System.Collections.IEnumerator.Reset() {
-                if (version != list.info.Value->Version) {
+                if (!list.info.HasValue || version != list.info.Value->Version) {
                     throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                 }
 
