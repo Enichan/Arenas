@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace Arenas {
@@ -202,6 +203,13 @@ namespace Arenas {
 
         public bool ContainsKey(TKey key) {
             return Get(&key, false) != null;
+        }
+
+        public bool ContainsValue(TValue value) {
+            foreach (var kvp in this) {
+                if (EqualityComparer<TValue>.Default.Equals(value, kvp.Value)) return true;
+            }
+            return false;
         }
 
         bool ICollection<KeyValuePair<TKey, TValue>>.Contains(KeyValuePair<TKey, TValue> item) {
@@ -421,12 +429,24 @@ namespace Arenas {
             } 
         }
 
-        public ICollection<TKey> Keys { get { throw new NotImplementedException(); } }
-        public ICollection<TValue> Values { get { throw new NotImplementedException(); } }
+        public KeyCollection Keys { get { return new KeyCollection(this); } }
+        public ValueCollection Values { get { return new ValueCollection(this); } }
 
         public bool IsAllocated { get { return info.HasValue; } }
         public Arena Arena { get { return info.Arena; } }
         bool ICollection<KeyValuePair<TKey, TValue>>.IsReadOnly { get { return false; } }
+
+        ICollection<TKey> IDictionary<TKey, TValue>.Keys {
+            get {
+                return new KeyCollection(this);
+            }
+        }
+
+        ICollection<TValue> IDictionary<TKey, TValue>.Values {
+            get {
+                return new ValueCollection(this);
+            }
+        }
 
         /// <summary>
         /// Wrapper struct around a memory area representing an UnmanagedDictEntry, key, and value
@@ -533,6 +553,256 @@ namespace Arenas {
                 currentKey = default;
             }
         }
+
+        #region Key and value collections
+        public readonly struct KeyCollection : ICollection<TKey>, IEnumerable<TKey>, IReadOnlyCollection<TKey> {
+            private readonly ArenaDict<TKey, TValue> dict;
+
+            public KeyCollection(ArenaDict<TKey, TValue> dict) {
+                this.dict = dict;
+            }
+
+            public Enumerator GetEnumerator() => new Enumerator(dict);
+
+            public void CopyTo(TKey[] array, int index) {
+                if (array == null) {
+                    throw new ArgumentNullException(nameof(array));
+                }
+                if (array.Rank != 1) {
+                    throw new ArgumentException("Only single dimensional arrays are supported for the requested action.", nameof(array));
+                }
+                if (array.GetLowerBound(0) != 0) {
+                    throw new ArgumentException("The lower bound of target array must be zero.", nameof(array));
+                }
+                if ((uint)index > (uint)array.Length) {
+                    throw new ArgumentOutOfRangeException(nameof(index), "Non-negative number required.");
+                }
+                if (array.Length - index < Count) {
+                    throw new ArgumentException("Destination array is not long enough to copy all the items in the collection. Check array index and length.", nameof(array));
+                }
+
+                foreach (var key in this) {
+                    array[index++] = key;
+                }
+            }
+
+            public int Count => dict.Count;
+
+            bool ICollection<TKey>.IsReadOnly => true;
+
+            void ICollection<TKey>.Add(TKey item) =>
+                throw new NotSupportedException("Mutating a value collection derived from a dictionary is not allowed.");
+
+            bool ICollection<TKey>.Remove(TKey item) =>
+                throw new NotSupportedException("Mutating a value collection derived from a dictionary is not allowed.");
+
+            void ICollection<TKey>.Clear() =>
+                throw new NotSupportedException("Mutating a value collection derived from a dictionary is not allowed.");
+
+            bool ICollection<TKey>.Contains(TKey item) => dict.ContainsKey(item);
+
+            IEnumerator<TKey> IEnumerable<TKey>.GetEnumerator() => GetEnumerator();
+
+            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+            public struct Enumerator : IEnumerator<TKey>, System.Collections.IEnumerator {
+                private ArenaDict<TKey, TValue> dict;
+                private int index;
+                private int offset;
+                private int version;
+                private TKey currentKey;
+
+                internal Enumerator(ArenaDict<TKey, TValue> dict) {
+                    this.dict = dict;
+                    index = 0;
+                    offset = 0;
+                    version = dict.info.Value->Version;
+                    currentKey = default;
+                }
+
+                public void Dispose() {
+                }
+
+                public bool MoveNext() {
+                    if (version != dict.info.Value->Version) {
+                        throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                    }
+
+                    while ((uint)index < (uint)dict.info.Value->BackingArrayLength) {
+                        // get current entry
+                        var entry = dict.GetOffset(offset);
+
+                        // move to next entry associated with the current index
+                        offset = entry.Next;
+                        if (offset == nullOffset) {
+                            // if the position of the next entry is zero then there are no further
+                            // entries at this index, increment the index and set the new offset to
+                            // the head of the list (the entry in the backing array)
+                            offset = ++index * dict.info.Value->EntrySize;
+                        }
+
+                        // only entries with a hashcode which isn't zero are valid entries
+                        if (entry.HashCode != noneHashCode) {
+                            currentKey = *entry.Key;
+                            return true;
+                        }
+                    }
+
+                    index = dict.info.Value->BackingArrayLength + 1;
+                    currentKey = default;
+                    return false;
+                }
+
+                public TKey Current {
+                    get {
+                        return currentKey;
+                    }
+                }
+
+                object IEnumerator.Current {
+                    get {
+                        if (index == 0 || index == dict.info.Value->BackingArrayLength + 1) {
+                            throw new InvalidOperationException("Enumeration has either not started or has already finished.");
+                        }
+                        return Current;
+                    }
+                }
+
+                void IEnumerator.Reset() {
+                    if (version != dict.info.Value->Version) {
+                        throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                    }
+
+                    index = 0;
+                    currentKey = default;
+                }
+            }
+        }
+
+        public readonly struct ValueCollection : ICollection<TValue>, IEnumerable<TValue>, IReadOnlyCollection<TValue> {
+            private readonly ArenaDict<TKey, TValue> dict;
+
+            public ValueCollection(ArenaDict<TKey, TValue> dict) {
+                this.dict = dict;
+            }
+
+            public Enumerator GetEnumerator() => new Enumerator(dict);
+
+            public void CopyTo(TValue[] array, int index) {
+                if (array == null) {
+                    throw new ArgumentNullException(nameof(array));
+                }
+                if (array.Rank != 1) {
+                    throw new ArgumentException("Only single dimensional arrays are supported for the requested action.", nameof(array));
+                }
+                if (array.GetLowerBound(0) != 0) {
+                    throw new ArgumentException("The lower bound of target array must be zero.", nameof(array));
+                }
+                if ((uint)index > (uint)array.Length) {
+                    throw new ArgumentOutOfRangeException(nameof(index), "Non-negative number required.");
+                }
+                if (array.Length - index < Count) {
+                    throw new ArgumentException("Destination array is not long enough to copy all the items in the collection. Check array index and length.", nameof(array));
+                }
+
+                foreach (var val in this) {
+                    array[index++] = val;
+                }
+            }
+
+            public int Count => dict.Count;
+
+            bool ICollection<TValue>.IsReadOnly => true;
+
+            void ICollection<TValue>.Add(TValue item) =>
+                throw new NotSupportedException("Mutating a value collection derived from a dictionary is not allowed.");
+
+            bool ICollection<TValue>.Remove(TValue item) =>
+                throw new NotSupportedException("Mutating a value collection derived from a dictionary is not allowed.");
+
+            void ICollection<TValue>.Clear() =>
+                throw new NotSupportedException("Mutating a value collection derived from a dictionary is not allowed.");
+
+            bool ICollection<TValue>.Contains(TValue item) => dict.ContainsValue(item);
+
+            IEnumerator<TValue> IEnumerable<TValue>.GetEnumerator() => GetEnumerator();
+
+            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+            public struct Enumerator : IEnumerator<TValue>, System.Collections.IEnumerator {
+                private ArenaDict<TKey, TValue> dict;
+                private int index;
+                private int offset;
+                private int version;
+                private TValue currentValue;
+
+                internal Enumerator(ArenaDict<TKey, TValue> dict) {
+                    this.dict = dict;
+                    index = 0;
+                    offset = 0;
+                    version = dict.info.Value->Version;
+                    currentValue = default;
+                }
+
+                public void Dispose() {
+                }
+
+                public bool MoveNext() {
+                    if (version != dict.info.Value->Version) {
+                        throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                    }
+
+                    while ((uint)index < (uint)dict.info.Value->BackingArrayLength) {
+                        // get current entry
+                        var entry = dict.GetOffset(offset);
+
+                        // move to next entry associated with the current index
+                        offset = entry.Next;
+                        if (offset == nullOffset) {
+                            // if the position of the next entry is zero then there are no further
+                            // entries at this index, increment the index and set the new offset to
+                            // the head of the list (the entry in the backing array)
+                            offset = ++index * dict.info.Value->EntrySize;
+                        }
+
+                        // only entries with a hashcode which isn't zero are valid entries
+                        if (entry.HashCode != noneHashCode) {
+                            currentValue = *entry.Value;
+                            return true;
+                        }
+                    }
+
+                    index = dict.info.Value->BackingArrayLength + 1;
+                    currentValue = default;
+                    return false;
+                }
+
+                public TValue Current {
+                    get {
+                        return currentValue;
+                    }
+                }
+
+                object IEnumerator.Current {
+                    get {
+                        if (index == 0 || index == dict.info.Value->BackingArrayLength + 1) {
+                            throw new InvalidOperationException("Enumeration has either not started or has already finished.");
+                        }
+                        return Current;
+                    }
+                }
+
+                void IEnumerator.Reset() {
+                    if (version != dict.info.Value->Version) {
+                        throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                    }
+
+                    index = 0;
+                    currentValue = default;
+                }
+            }
+        }
+        #endregion
     }
 
     public static class UnmanagedDictTypes {
