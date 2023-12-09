@@ -1,21 +1,18 @@
-﻿using Arenas;
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO.IsolatedStorage;
-using System.Linq;
 using System.Runtime.InteropServices;
-using System.Runtime.Serialization;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace Arenas {
+    using static UnmanagedDictTypes;
+
     [DebuggerTypeProxy(typeof(ArenaDictDebugView<,>))]
-    public unsafe struct ArenaDict<TKey, TValue> /*: IDictionary<TKey, TValue>*/ where TKey : unmanaged where TValue : unmanaged{
+    public unsafe struct ArenaDict<TKey, TValue> : IDictionary<TKey, TValue> where TKey : unmanaged where TValue : unmanaged{
         private const int defaultCapacity = 8;
         private const uint fibHashMagic = 2654435769;
+        private const int noneHashCode = 0;
+        private const int nullOffset = 0;
 
         private UnmanagedRef<UnmanagedDict> info;
 
@@ -23,8 +20,11 @@ namespace Arenas {
             if (arena is null) {
                 throw new ArgumentNullException(nameof(arena));
             }
+
+            // first allocate our info object
             info = arena.Allocate(new UnmanagedDict());
 
+            // must have positive power of two capacity
             if (capacity <= 0) {
                 capacity = defaultCapacity;
             }
@@ -34,37 +34,51 @@ namespace Arenas {
                 throw new ArgumentOutOfRangeException(nameof(capacity));
             }
 
+            // get the shift amount from the capacity which is now a power of two
+            // this is used to shift the hashcode into a backing array index after
+            // multiplying it by our magic fibonacci number
             capacity = (int)powTwo;
             var shift = 32 - MemHelper.PowerOfTwoLeadingZeros[powTwo];
 
+            // because .NET standard can't have composed unmanaged types we cant allocate a memory area
+            // that is a series of entry structs, and instead have to interleave entry headers with key
+            // and value manually. we generate type info here in order to get all the offsets and sizes
+            // and such that are needed
             var typeK = TypeInfo.GenerateTypeInfo<TKey>();
             var typeV = TypeInfo.GenerateTypeInfo<TValue>();
             var entryInfo = TypeInfo.GenerateTypeInfo<UnmanagedDictEntry>();
             var entrySize = MemHelper.AlignCeil(typeK.Size + typeV.Size + entryInfo.Size, sizeof(ulong));
 
+            // now we know entry size, calculate the actual amount of memory needed
+            // this needs to be twice the amount in case of a worst case scenario of all items mapping
+            // to the same hashcode, that way we know we always have enough capacity outside of the
+            // backing array 
             var size = capacity * entrySize;
             size *= 2; // extra space for linked lists
-            var itemsRef = arena.AllocCount<byte>(size);
+            var itemsRef = arena.AllocCount<byte>(size); // alloc memory buffer
 
-            var bufferLength = capacity;
-            var overflowLength = itemsRef.Size / entrySize - bufferLength;
+            var backingArrayLength = capacity;
+            var overflowLength = itemsRef.Size / entrySize - backingArrayLength;
 
+            // set all our props
+            info.Value->Shift = shift;
             info.Value->EntrySize = entrySize;
-            info.Value->KeyOffset = entryInfo.Size;
-            info.Value->ValueOffset = info.Value->KeyOffset + typeK.Size;
+            info.Value->KeyOffset = entryInfo.Size; // key comes after entry struct
+            info.Value->ValueOffset = info.Value->KeyOffset + typeK.Size; // val comes after key
 
             info.Value->ItemsBuffer = (UnmanagedRef)itemsRef;
-            info.Value->BufferLength = capacity;
-            info.Value->OverflowLength = itemsRef.Size / entrySize - bufferLength;
-            Debug.Assert(info.Value->OverflowLength >= info.Value->BufferLength);
+            info.Value->BackingArrayLength = capacity;
+            info.Value->OverflowLength = itemsRef.Size / entrySize - backingArrayLength;
+            Debug.Assert(info.Value->OverflowLength >= info.Value->BackingArrayLength);
 
-            info.Value->Bump = info.Value->BufferLength * info.Value->EntrySize;
-            info.Value->Shift = shift;
+            // position our bump allocator to the end of the backing array
+            // this is used to allocate new entries when the freelist is empty
+            info.Value->Bump = info.Value->BackingArrayLength * info.Value->EntrySize;
         }
 
         // https://probablydance.com/2018/06/16/fibonacci-hashing-the-optimization-that-the-world-forgot-or-a-better-alternative-to-integer-modulo/
         private static uint HashToIndex(uint hash, int shift) {
-            hash ^= hash >> shift; // this line improved distribution but can be commented out
+            hash ^= hash >> shift; // this line improves distribution but can be commented out
             return (fibHashMagic * hash) >> shift;
         }
 
@@ -76,6 +90,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot Free UnmanagedDict<TKey, TValue>: list memory has previously been freed");
             }
 
+            info.Value->Version++;
             var items = info.Value->ItemsBuffer;
             Arena.Free(items);
             Arena.Free(info);
@@ -92,24 +107,22 @@ namespace Arenas {
 
             info.Value->Version++;
             info.Value->Count = 0;
-            info.Value->Bump = info.Value->BufferLength * info.Value->EntrySize;
-            info.Value->Head = 0;
+            info.Value->Bump = info.Value->BackingArrayLength * info.Value->EntrySize;
+            info.Value->Head = nullOffset;
+
+            // zero backing array memory (Bump has been set to the end of the backing array)
+            // remaining storage space doesn't need to be zeroed because the bump allocator
+            // zeroes out newly allocated entries
             MemHelper.ZeroMemory(info.Value->ItemsBuffer.Value, info.Value->Bump);
         }
 
-        //private void Copy(int sourceIndex, int destIndex, int count) {
-        //    Debug.Assert(destIndex + count <= info.Value->Capacity, "Bad ArenaList copy");
-        //    var items = (T*)info.Value->Items.RawUnsafePointer;
-        //    var source = items + sourceIndex;
-        //    var dest = items + destIndex;
-        //    var destSize = (info.Value->Capacity - destIndex) * sizeof(T);
-        //    var bytesToCopy = (info.Value->Count - sourceIndex) * sizeof(T);
-        //    Buffer.MemoryCopy(source, dest, destSize, bytesToCopy);
-        //}
+        public void TrimExcess(int capacity = 0) {
+            throw new NotImplementedException();
+        }
 
         private void AddCapacity() {
             // copy into new dictionary
-            var newDict = new ArenaDict<TKey, TValue>(info.Arena, info.Value->BufferLength * 2);
+            var newDict = new ArenaDict<TKey, TValue>(info.Arena, info.Value->BackingArrayLength * 2);
             foreach (var kvp in this) {
                 newDict.Add(kvp.Key, kvp.Value);
             }
@@ -127,25 +140,29 @@ namespace Arenas {
 
         private int GetHashCode(TKey* key) {
             var hashCode = key->GetHashCode();
-            if (hashCode == 0) hashCode = 0x1234ABCD;
+            if (hashCode == noneHashCode) hashCode = 0x1234FEDC; // hashCode cannot be 0
             return hashCode;
         }
 
-        private bool TryGetEntry(TKey* key, int hashCode, out Entry entry) {
+        private bool TryGetEntry(TKey* key, int hashCode, out Entry entry, out Entry? previous) {
             var index = (int)HashToIndex((uint)hashCode, info.Value->Shift);
             entry = GetIndex(index);
 
-            if (entry.HashCode == 0) {
+            if (entry.HashCode == noneHashCode) {
                 // no value at index, insert
+                previous = null;
                 return true;
             }
             else if (entry.HashCode == hashCode && EqualityComparer<TKey>.Default.Equals(*entry.Key, *key)) {
                 // found identical key at index
+                previous = null;
                 return true;
             }
             else {
+                // bucket exists but value wasn't at head, search nodes
                 var next = entry.Next;
-                while (next > 0) {
+                while (next > nullOffset) {
+                    previous = entry;
                     entry = GetOffset(next);
                     if (entry.HashCode == hashCode && EqualityComparer<TKey>.Default.Equals(*entry.Key, *key)) {
                         // found identical key in bucket
@@ -153,6 +170,8 @@ namespace Arenas {
                     }
                     next = entry.Next;
                 }
+
+                previous = null;
                 return false;
             }
         }
@@ -167,12 +186,41 @@ namespace Arenas {
             Set(&key, &value, false);
         }
 
+        void ICollection<KeyValuePair<TKey, TValue>>.Add(KeyValuePair<TKey, TValue> item) {
+            Add(item.Key, item.Value);
+        }
+
+        public bool TryGetValue(TKey key, out TValue value) {
+            var valRef = Get(&key, false);
+            if (valRef == null) {
+                value = default;
+                return false;
+            }
+            value = *valRef;
+            return true;
+        }
+
+        public bool ContainsKey(TKey key) {
+            return Get(&key, false) != null;
+        }
+
+        bool ICollection<KeyValuePair<TKey, TValue>>.Contains(KeyValuePair<TKey, TValue> item) {
+            var key = item.Key;
+            var valRef = Get(&key, false);
+            if (valRef == null) {
+                return false;
+            }
+            return EqualityComparer<TValue>.Default.Equals(*valRef, item.Value);
+        }
+
         private TValue* Get(TKey* key, bool throwIfNotFound) {
             var hashCode = GetHashCode(key);
-
-            if ((!TryGetEntry(key, hashCode, out var entry) || entry.HashCode == 0) && throwIfNotFound) {
-                // no key found, add to bucket
-                throw new KeyNotFoundException();
+            if (!TryGetEntry(key, hashCode, out var entry, out _) || entry.HashCode == noneHashCode) {
+                // no key found
+                if (throwIfNotFound) {
+                    throw new KeyNotFoundException();
+                }
+                return null;
             }
 
             return entry.Value;
@@ -181,25 +229,32 @@ namespace Arenas {
         private void Set(TKey* key, in TValue* value, bool allowDuplicates) {
             var hashCode = GetHashCode(key);
 
-            if (!TryGetEntry(key, hashCode, out var entry)) {
+            if (!TryGetEntry(key, hashCode, out var entry, out _)) {
+                // if TryGetEntry fails then `entry` is the last entry it checked
+                // inside the bucket and never the head entry inside the backing
+                // array, so we need to add a node after it
+
                 // no key found, add to bucket
-                var head = GetHead();
+                var head = GetHead(); // get head from freelist or bump allocator
+
+                // remove head by advancing head to the next item
                 info.Value->Head = head.Next;
-                head.Next = 0;
+
+                // point popped head to nothing, point entry to popped head
+                head.Next = nullOffset;
                 entry.Next = head.Offset;
                 entry = head;
             }
 
-            Insert(entry, hashCode, key, value);
-        }
-
-        private void Insert(Entry entry, int hashCode, TKey* key, TValue* value) {
+            // overwrite entry with correct values
             entry.HashCode = hashCode;
             *entry.Key = *key;
             *entry.Value = *value;
 
+            // increment count and rebalance at 75% full
+            info.Value->Version++;
             info.Value->Count++;
-            if (info.Value->Count >= info.Value->BufferLength * 3 / 4) {
+            if (info.Value->Count >= info.Value->BackingArrayLength * 3 / 4) {
                 AddCapacity();
             }
         }
@@ -212,14 +267,110 @@ namespace Arenas {
             return new Entry(info.Value->ItemsBuffer.Value + offset, info.Value);
         }
 
+        /// <summary>
+        /// Gets but does not pop the head off the overflow area's freelist. This may
+        /// instead allocate a new entry using the bump allocator if the freelist is
+        /// empty
+        /// </summary>
+        /// <returns>Entry which point to the head entry</returns>
         private Entry GetHead() {
             var head = info.Value->Head;
-            if (head == 0) {
+
+            if (head == nullOffset) {
+                // no entry in freelist, allocate via bump allocator
                 head = info.Value->Bump;
                 info.Value->Bump += info.Value->EntrySize;
+                
+                // make sure the newly allocated entry is zeroed, because
+                // we only zero the backing array on clear, not the additional
+                // memory areas
+                var headEntry = GetOffset(head);
+                headEntry.Clear();
+
                 Debug.Assert(head < info.Value->ItemsBuffer.Size);
+                Debug.Assert(headEntry.Next == nullOffset);
             }
+
             return GetOffset(head);
+        }
+
+        public bool Remove(TKey key) {
+            var hashCode = GetHashCode(&key);
+            
+            if (!TryGetEntry(&key, hashCode, out var entry, out var _prev)) {
+                return false;
+            }
+
+            if (_prev.HasValue) {
+                // entry is a linked list node, so we just unlink it
+                UnlinkEntry(entry, _prev.Value);
+            }
+            else {
+                // entry is in main backing array
+                if (entry.Next != nullOffset) {
+                    // entry links to another value, copy the next value into the
+                    // backing array and then unlink it
+                    var next = GetOffset(entry.Next);
+
+                    // set hashcode, key, and value but leave `next` property as
+                    // is so we can subsequently call UnlinkEntry
+                    entry.HashCode = next.HashCode;
+                    *entry.Key = *next.Key;
+                    *entry.Value = *next.Value;
+
+                    UnlinkEntry(next, entry);
+                }
+                else {
+                    // entry links to no values, zero out
+                    MemHelper.ZeroMemory(entry.Pointer, info.Value->EntrySize);
+                }
+            }
+
+            info.Value->Version++;
+            info.Value->Count--;
+            return true;
+        }
+
+        private void UnlinkEntry(Entry entry, Entry prev) {
+            // unlink node
+            prev.Next = entry.Next;
+
+            // insert new head node into freelist
+            var prevHead = info.Value->Head;
+            info.Value->Head = entry.Offset;
+            entry.Next = prevHead;
+        }
+
+        bool ICollection<KeyValuePair<TKey, TValue>>.Remove(KeyValuePair<TKey, TValue> item) {
+            var key = item.Key;
+            var valRef = Get(&key, false);
+            if (valRef != null && EqualityComparer<TValue>.Default.Equals(*valRef, item.Value)) {
+                Remove(key);
+                return true;
+            }
+            return false;
+        }
+
+        void ICollection<KeyValuePair<TKey, TValue>>.CopyTo(KeyValuePair<TKey, TValue>[] array, int index) {
+            if (array == null) {
+                throw new ArgumentNullException(nameof(array));
+            }
+            if (array.Rank != 1) {
+                throw new ArgumentException("Only single dimensional arrays are supported for the requested action.", nameof(array));
+            }
+            if (array.GetLowerBound(0) != 0) {
+                throw new ArgumentException("The lower bound of target array must be zero.", nameof(array));
+            }
+            if ((uint)index > (uint)array.Length) {
+                throw new ArgumentOutOfRangeException(nameof(index), "Non-negative number required.");
+            }
+            if (array.Length - index < Count) {
+                throw new ArgumentException("Destination array is not long enough to copy all the items in the collection. Check array index and length.", nameof(array));
+            }
+
+            foreach (var kvp in this) {
+                array[index++] = kvp;
+            }
         }
 
         public Enumerator GetEnumerator() {
@@ -232,13 +383,13 @@ namespace Arenas {
             return new Enumerator(this);
         }
 
-        //IEnumerator<TKey, TValue> IEnumerable<TKey, TValue>.GetEnumerator() {
-        //    return GetEnumerator();
-        //}
+        IEnumerator<KeyValuePair<TKey, TValue>> IEnumerable<KeyValuePair<TKey, TValue>>.GetEnumerator() {
+            return GetEnumerator();
+        }
 
-        //IEnumerator IEnumerable.GetEnumerator() {
-        //    return GetEnumerator();
-        //}
+        IEnumerator IEnumerable.GetEnumerator() {
+            return GetEnumerator();
+        }
 
         public TValue this[TKey key] {
             get {
@@ -270,10 +421,16 @@ namespace Arenas {
             } 
         }
 
+        public ICollection<TKey> Keys { get { throw new NotImplementedException(); } }
+        public ICollection<TValue> Values { get { throw new NotImplementedException(); } }
+
         public bool IsAllocated { get { return info.HasValue; } }
         public Arena Arena { get { return info.Arena; } }
-        //bool ICollection<KeyValuePair<TKey, TValue>>.IsReadOnly { get { return false; } }
+        bool ICollection<KeyValuePair<TKey, TValue>>.IsReadOnly { get { return false; } }
 
+        /// <summary>
+        /// Wrapper struct around a memory area representing an UnmanagedDictEntry, key, and value
+        /// </summary>
         private unsafe readonly struct Entry {
             public readonly IntPtr Pointer;
             public readonly UnmanagedDict* Dict;
@@ -283,10 +440,19 @@ namespace Arenas {
                 Dict = dict;
             }
 
+            public void Clear() {
+                *(UnmanagedDictEntry*)Pointer = default;
+                *Key = default;
+                *Value = default;
+            }
+
             public override string ToString() {
                 return $"Entry({*Key}={*Value}, HashCode={HashCode}, Next={Next}, Offset={Offset})";
             }
 
+            /// <summary>
+            /// Offset of this entry from the start of the memory storage area for the dictionary's items
+            /// </summary>
             public int Offset { get { return (int)((ulong)Pointer - (ulong)Dict->ItemsBuffer.Value); } }
             public TKey* Key { get { return (TKey*)(Pointer + Dict->KeyOffset); } }
             public TValue* Value { get { return (TValue*)(Pointer + Dict->ValueOffset); } }
@@ -318,21 +484,27 @@ namespace Arenas {
                     throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                 }
 
-                while ((uint)index < (uint)dict.info.Value->BufferLength) {
+                while ((uint)index < (uint)dict.info.Value->BackingArrayLength) {
+                    // get current entry
                     var entry = dict.GetOffset(offset);
 
+                    // move to next entry associated with the current index
                     offset = entry.Next;
-                    if (offset == 0) {
+                    if (offset == nullOffset) {
+                        // if the position of the next entry is zero then there are no further
+                        // entries at this index, increment the index and set the new offset to
+                        // the head of the list (the entry in the backing array)
                         offset = ++index * dict.info.Value->EntrySize;
                     }
 
-                    if (entry.HashCode > 0) {
+                    // only entries with a hashcode which isn't zero are valid entries
+                    if (entry.HashCode != noneHashCode) {
                         currentKey = new KeyValuePair<TKey, TValue>(*entry.Key, *entry.Value);
                         return true;
                     }
                 }
 
-                index = dict.info.Value->BufferLength + 1;
+                index = dict.info.Value->BackingArrayLength + 1;
                 currentKey = default;
                 return false;
             }
@@ -343,16 +515,16 @@ namespace Arenas {
                 }
             }
 
-            object System.Collections.IEnumerator.Current {
+            object IEnumerator.Current {
                 get {
-                    if (index == 0 || index == dict.info.Value->BufferLength + 1) {
+                    if (index == 0 || index == dict.info.Value->BackingArrayLength + 1) {
                         throw new InvalidOperationException("Enumeration has either not started or has already finished.");
                     }
                     return Current;
                 }
             }
 
-            void System.Collections.IEnumerator.Reset() {
+            void IEnumerator.Reset() {
                 if (version != dict.info.Value->Version) {
                     throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                 }
@@ -363,53 +535,92 @@ namespace Arenas {
         }
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    public struct UnmanagedDict {
-        public UnmanagedRef ItemsBuffer;
-        public int BufferLength;
-        public int OverflowLength;
-        public int Count;
-        public int Shift;
-        public int Version;
-        public int EntrySize;
-        public int KeyOffset;
-        public int ValueOffset;
-        public int Head;
-        public int Bump;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct UnmanagedDictEntry {
-        public int HashCode;
-        public int Next;
-
-        public UnmanagedDictEntry(int hashCode, int next) {
-            HashCode = hashCode;
-            Next = next;
+    public static class UnmanagedDictTypes {
+        [StructLayout(LayoutKind.Sequential)]
+        public struct UnmanagedDict {
+            /// <summary>
+            /// Raw memory buffer that contains dictionary entries
+            /// </summary>
+            public UnmanagedRef ItemsBuffer;
+            /// <summary>
+            /// Length in number of items of the backing array that holds the linked list head entries,
+            /// which should always be a power of two
+            /// </summary>
+            public int BackingArrayLength;
+            /// <summary>
+            /// Length in number of items that the remaining raw memory buffer can store,
+            /// which should always be greater than or equal to the backing array length
+            /// </summary>
+            public int OverflowLength;
+            /// <summary>
+            /// Number of items in the dictionary
+            /// </summary>
+            public int Count;
+            /// <summary>
+            /// Number of bits to shift to the right to get a valid backing array index
+            /// after applying fibonacci hasing (see HashToIndex)
+            /// </summary>
+            public int Shift;
+            /// <summary>
+            /// Version number, increased with every mutation of the contained data
+            /// </summary>
+            public int Version;
+            /// <summary>
+            /// Size of each dictionary entry in bytes
+            /// </summary>
+            public int EntrySize;
+            /// <summary>
+            /// Byte offset from the start of an entry (which contains an UnmanagedDictEntry)
+            /// to the entry's key
+            /// </summary>
+            public int KeyOffset;
+            /// <summary>
+            /// Byte offset from the start of an entry (which contains an UnmanagedDictEntry)
+            /// to the entry's value
+            /// </summary>
+            public int ValueOffset;
+            /// <summary>
+            /// The head of the freelist of entries removed from the dictionary which resided
+            /// outside of the backing array, which is used to allocate entries if not zero.
+            /// This is the offset in bytes inside the raw memory buffer to get to the entry
+            /// </summary>
+            public int Head;
+            /// <summary>
+            /// Position of the bump allocator, used to allocate entries when the freelist is
+            /// empty. This is the offset in bytes inside the raw memory buffer to get to the entry
+            /// </summary>
+            public int Bump;
         }
-    }
 
-    internal unsafe readonly struct ArenaDictDebugView<TKey, TValue> where TKey : unmanaged where TValue : unmanaged {
-        private readonly ArenaDict<TKey, TValue> dict;
+        [StructLayout(LayoutKind.Sequential)]
+        public struct UnmanagedDictEntry {
+            public int HashCode;
+            public int Next;
 
-        public ArenaDictDebugView(ArenaDict<TKey, TValue> dict) {
-            this.dict = dict;
-        }
-
-        public KeyValuePair<TKey, TValue>[] Items {
-            get {
-                var items = new KeyValuePair<TKey, TValue>[dict.Count];
-                int index = 0;
-                foreach (var kvp in dict) {
-                    items[index] = kvp;
-                    index++;
-                }
-                return items;
+            public UnmanagedDictEntry(int hashCode, int next) {
+                HashCode = hashCode;
+                Next = next;
             }
         }
 
-        public int Count { get { return dict.Count; } }
-        public Arena Arena { get { return dict.Arena; } }
-        public bool IsAllocated { get { return dict.IsAllocated; } }
+        internal unsafe readonly struct ArenaDictDebugView<TKey, TValue> where TKey : unmanaged where TValue : unmanaged {
+            private readonly ArenaDict<TKey, TValue> dict;
+
+            public ArenaDictDebugView(ArenaDict<TKey, TValue> dict) {
+                this.dict = dict;
+            }
+
+            public KeyValuePair<TKey, TValue>[] Items {
+                get {
+                    var items = new KeyValuePair<TKey, TValue>[dict.Count];
+                    ((ICollection<KeyValuePair<TKey, TValue>>)dict).CopyTo(items, 0);
+                    return items;
+                }
+            }
+
+            public int Count { get { return dict.Count; } }
+            public Arena Arena { get { return dict.Arena; } }
+            public bool IsAllocated { get { return dict.IsAllocated; } }
+        }
     }
 }

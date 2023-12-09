@@ -1,6 +1,7 @@
 ﻿using Arenas;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -15,8 +16,21 @@ namespace ArenasTest {
                 var dict = new ArenaDict<int, int>(arena);
                 var second = dict;
 
-                for (int i = 0; i < 32; i++) {
+                for (int i = 0; i < 4096; i++) {
                     dict[i] = i;
+                }
+                for (int i = 0; i < 4096; i++) {
+                    dict.Remove(i);
+                }
+                for (int i = 0; i < 4096; i++) {
+                    dict[i] = i;
+                }
+
+                var last = -1;
+                foreach (var kvp in (from kvp in dict orderby kvp.Key ascending select kvp)) {
+                    Debug.Assert(kvp.Key - last == 1);
+                    last = kvp.Key;
+                    Console.WriteLine(kvp);
                 }
 
                 dict.Clear();
@@ -58,8 +72,6 @@ namespace ArenasTest {
                 foreach (var i in list) {
                     Console.WriteLine(i);
                 }
-
-                list.Free();
 
                 // free an item
                 arena.Free(jack);
@@ -131,6 +143,8 @@ namespace ArenasTest {
                     var person = item.As<Person>();
                     Console.WriteLine(*person);
                 }
+
+                people.Free();
             }
         }
 

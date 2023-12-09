@@ -9,6 +9,8 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace Arenas {
+    using static UnmanagedListTypes;
+
     [DebuggerTypeProxy(typeof(ArenaListDebugView<>))]
     public unsafe struct ArenaList<T> : IList<T> where T : unmanaged {
         private const int defaultCapacity = 4;
@@ -22,10 +24,11 @@ namespace Arenas {
             info = arena.Allocate(new UnmanagedList());
 
             var minCapacity = Math.Max(capacity, defaultCapacity);
-            var itemsRef = arena.AllocCount<T>(minCapacity);
+            var itemSize = TypeInfo.GenerateTypeInfo<T>().Size;
+            var itemsRef = arena.AllocCount<byte>(minCapacity * itemSize);
 
             info.Value->Items = (UnmanagedRef)itemsRef;
-            info.Value->Capacity = itemsRef.ElementCount; // we might get more capacity than requested
+            info.Value->Capacity = itemsRef.ElementCount / itemSize; // we might get more capacity than requested
         }
 
         public void Free() {
@@ -36,7 +39,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot Free UnmanagedList<T>: list memory has previously been freed");
             }
 
-#warning this will free items stored in the list, which may not be intended
+            info.Value->Version++;
             var items = info.Value->Items;
             Arena.Free(items);
             Arena.Free(info);
@@ -72,8 +75,9 @@ namespace Arenas {
             var newMinCapacity = info.Value->Capacity * 2;
 
             var items = info.Value->Items;
-            var newItems = Arena.AllocCount<T>(newMinCapacity);
-            info.Value->Capacity = newItems.ElementCount; // we might get more capacity than requested
+            var itemSize = TypeInfo.GenerateTypeInfo<T>().Size;
+            var newItems = Arena.AllocCount<byte>(newMinCapacity * itemSize);
+            info.Value->Capacity = newItems.ElementCount / itemSize; // we might get more capacity than requested
 
             var newSize = newItems.Size;
             Buffer.MemoryCopy((void*)items.Value, newItems.Value, newSize, newSize);
@@ -339,31 +343,33 @@ namespace Arenas {
         }
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    public struct UnmanagedList {
-        public UnmanagedRef Items;
-        public int Count;
-        public int Capacity;
-        public int Version;
-    }
-
-    internal unsafe readonly struct ArenaListDebugView<T> where T : unmanaged {
-        private readonly ArenaList<T> list;
-
-        public ArenaListDebugView(ArenaList<T> list) {
-            this.list = list;
+    public static class UnmanagedListTypes {
+        [StructLayout(LayoutKind.Sequential)]
+        public struct UnmanagedList {
+            public UnmanagedRef Items;
+            public int Count;
+            public int Capacity;
+            public int Version;
         }
 
-        public T[] Items {
-            get {
-                var items = new T[list.Count];
-                list.CopyTo(items, 0);
-                return items;
+        internal unsafe readonly struct ArenaListDebugView<T> where T : unmanaged {
+            private readonly ArenaList<T> list;
+
+            public ArenaListDebugView(ArenaList<T> list) {
+                this.list = list;
             }
-        }
 
-        public int Count { get { return list.Count; } }
-        public Arena Arena { get { return list.Arena; } }
-        public bool IsAllocated { get { return list.IsAllocated; } }
+            public T[] Items {
+                get {
+                    var items = new T[list.Count];
+                    list.CopyTo(items, 0);
+                    return items;
+                }
+            }
+
+            public int Count { get { return list.Count; } }
+            public Arena Arena { get { return list.Arena; } }
+            public bool IsAllocated { get { return list.IsAllocated; } }
+        }
     }
 }
