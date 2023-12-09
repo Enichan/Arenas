@@ -36,14 +36,26 @@ namespace ArenasTest {
                     list.Add(i);
                 }
 
-                Console.WriteLine("Items in arena:");
-                foreach (var item in arena) {
-                    Console.WriteLine(item);
-                }
-
                 Console.WriteLine("Values in list:");
                 foreach (var i in list) {
                     Console.WriteLine(i);
+                }
+
+                // make a dictionary of integers in the arena
+                var dict = new ArenaDict<int, int>(arena);
+                var random = new Random(12345);
+                for (int i = 0; i < 20; i++) {
+                    dict[random.Next(1000)] = random.Next(1000);
+                }
+
+                Console.WriteLine("Values in dictionary:");
+                foreach (var kvp in dict) {
+                    Console.WriteLine(kvp);
+                }
+
+                Console.WriteLine("Items in arena:");
+                foreach (var item in arena) {
+                    Console.WriteLine(item);
                 }
 
                 // free an item
