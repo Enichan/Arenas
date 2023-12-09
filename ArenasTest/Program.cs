@@ -1,6 +1,7 @@
 ﻿using Arenas;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -115,6 +116,8 @@ namespace ArenasTest {
                     var person = item.As<Person>();
                     Console.WriteLine(*person);
                 }
+
+                people.Free();
             }
         }
 
