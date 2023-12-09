@@ -70,19 +70,21 @@ namespace Arenas {
             var overflowLength = itemsRef.Size / entrySize - backingArrayLength;
 
             // set all our props
-            info.Value->Shift = shift;
-            info.Value->EntrySize = entrySize;
-            info.Value->KeyOffset = entryInfo.Size; // key comes after entry struct
-            info.Value->ValueOffset = info.Value->KeyOffset + typeK.Size; // val comes after key
+            var self = info.Value;
 
-            info.Value->ItemsBuffer = (UnmanagedRef)itemsRef;
-            info.Value->BackingArrayLength = capacity;
-            info.Value->OverflowLength = itemsRef.Size / entrySize - backingArrayLength;
-            Debug.Assert(info.Value->OverflowLength >= info.Value->BackingArrayLength);
+            self->Shift = shift;
+            self->EntrySize = entrySize;
+            self->KeyOffset = entryInfo.Size; // key comes after entry struct
+            self->ValueOffset = self->KeyOffset + typeK.Size; // val comes after key
+
+            self->ItemsBuffer = (UnmanagedRef)itemsRef;
+            self->BackingArrayLength = capacity;
+            self->OverflowLength = itemsRef.Size / entrySize - backingArrayLength;
+            Debug.Assert(self->OverflowLength >= self->BackingArrayLength);
 
             // position our bump allocator to the end of the backing array
             // this is used to allocate new entries when the freelist is empty
-            info.Value->Bump = info.Value->BackingArrayLength * info.Value->EntrySize;
+            self->Bump = self->BackingArrayLength * self->EntrySize;
         }
 
         // https://probablydance.com/2018/06/16/fibonacci-hashing-the-optimization-that-the-world-forgot-or-a-better-alternative-to-integer-modulo/
@@ -95,12 +97,14 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot Free UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot Free UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
             }
 
-            info.Value->Version++;
-            var items = info.Value->ItemsBuffer;
+            self->Version++;
+            var items = self->ItemsBuffer;
             Arena.Free(items);
             Arena.Free(info);
             info = default;
@@ -110,38 +114,44 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot Clear UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot Clear UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
             }
 
-            info.Value->Version++;
-            info.Value->Count = 0;
-            info.Value->Bump = info.Value->BackingArrayLength * info.Value->EntrySize;
-            info.Value->Head = nullOffset;
+            var items = self->ItemsBuffer.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot Clear UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+            }
+
+            self->Version++;
+            self->Count = 0;
+            self->Bump = self->BackingArrayLength * self->EntrySize;
+            self->Head = nullOffset;
 
             // zero backing array memory (Bump has been set to the end of the backing array)
             // remaining storage space doesn't need to be zeroed because the bump allocator
             // zeroes out newly allocated entries
-            MemHelper.ZeroMemory(info.Value->ItemsBuffer.Value, info.Value->Bump);
+            MemHelper.ZeroMemory(items, self->Bump);
         }
 
         // TODO: implement
         //public void TrimExcess(int capacity = 0) {
         //}
 
-        private void AddCapacity() {
+        private void AddCapacity(UnmanagedDict* self, IntPtr items) {
             // copy into new dictionary
-            var newDict = new ArenaDict<TKey, TValue>(info.Arena, info.Value->BackingArrayLength * 2);
+            var newDict = new ArenaDict<TKey, TValue>(info.Arena, self->BackingArrayLength * 2);
             foreach (var kvp in this) {
                 newDict.Add(kvp.Key, kvp.Value);
             }
 
             // free old items buffer
-            var items = info.Value->ItemsBuffer;
             Arena.Free(items);
 
             // copy new dictionary's info
-            *info.Value = *newDict.info.Value;
+            *self = *newDict.info.Value;
 
             // free new dictionary's info
             Arena.Free(newDict.info);
@@ -153,9 +163,9 @@ namespace Arenas {
             return hashCode;
         }
 
-        private bool TryGetEntry(TKey* key, int hashCode, out Entry entry, out Entry? previous) {
-            var index = (int)HashToIndex((uint)hashCode, info.Value->Shift);
-            entry = GetIndex(index);
+        private bool TryGetEntry(UnmanagedDict* self, IntPtr items, TKey* key, int hashCode, out Entry entry, out Entry? previous) {
+            var index = (int)HashToIndex((uint)hashCode, self->Shift);
+            entry = GetIndex(self, items, index);
 
             if (entry.HashCode == noneHashCode) {
                 // no value at index, insert
@@ -172,7 +182,7 @@ namespace Arenas {
                 var next = entry.Next;
                 while (next > nullOffset) {
                     previous = entry;
-                    entry = GetOffset(next);
+                    entry = GetOffset(self, items, next);
                     if (entry.HashCode == hashCode && EqualityComparer<TKey>.Default.Equals(*entry.Key, *key)) {
                         // found identical key in bucket
                         return true;
@@ -189,10 +199,18 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot Add item to UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot Add item to UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
             }
-            Set(&key, &value, false);
+
+            var items = self->ItemsBuffer.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot Add item to UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+            }
+
+            Set(self, items, &key, &value, false);
         }
 
         void ICollection<KeyValuePair<TKey, TValue>>.Add(KeyValuePair<TKey, TValue> item) {
@@ -203,11 +221,18 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot TryGetValue on UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot TryGetValue on UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
             }
 
-            var valRef = Get(&key, false);
+            var items = self->ItemsBuffer.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot TryGetValue on UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+            }
+
+            var valRef = Get(self, items, &key, false);
             if (valRef == null) {
                 value = default;
                 return false;
@@ -220,10 +245,18 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot ContainsKey on UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot ContainsKey on UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
             }
-            return Get(&key, false) != null;
+
+            var items = self->ItemsBuffer.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot ContainsKey on UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+            }
+
+            return Get(self, items, &key, false) != null;
         }
 
         public bool ContainsValue(TValue value) {
@@ -243,20 +276,30 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot Contains key value pair on UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot Contains key value pair on UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
             }
+
+            var items = self->ItemsBuffer.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot Contains key value pair on UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+            }
+
             var key = item.Key;
-            var valRef = Get(&key, false);
+            var valRef = Get(self, items, &key, false);
             if (valRef == null) {
                 return false;
             }
+
             return EqualityComparer<TValue>.Default.Equals(*valRef, item.Value);
         }
 
-        private TValue* Get(TKey* key, bool throwIfNotFound) {
+        private TValue* Get(UnmanagedDict* self, IntPtr items, TKey* key, bool throwIfNotFound) {
             var hashCode = GetHashCode(key);
-            if (!TryGetEntry(key, hashCode, out var entry, out _) || entry.HashCode == noneHashCode) {
+
+            if (!TryGetEntry(self, items, key, hashCode, out var entry, out _) || entry.HashCode == noneHashCode) {
                 // no key found
                 if (throwIfNotFound) {
                     throw new KeyNotFoundException();
@@ -267,19 +310,19 @@ namespace Arenas {
             return entry.Value;
         }
 
-        private void Set(TKey* key, in TValue* value, bool allowDuplicates) {
+        private void Set(UnmanagedDict* self, IntPtr items, TKey* key, in TValue* value, bool allowDuplicates) {
             var hashCode = GetHashCode(key);
 
-            if (!TryGetEntry(key, hashCode, out var entry, out _)) {
+            if (!TryGetEntry(self, items, key, hashCode, out var entry, out _)) {
                 // if TryGetEntry fails then `entry` is the last entry it checked
                 // inside the bucket and never the head entry inside the backing
                 // array, so we need to add a node after it
 
                 // no key found, add to bucket
-                var head = GetHead(); // get head from freelist or bump allocator
+                var head = GetHead(self, items); // get head from freelist or bump allocator
 
                 // remove head by advancing head to the next item
-                info.Value->Head = head.Next;
+                self->Head = head.Next;
 
                 // point popped head to nothing, point entry to popped head
                 head.Next = nullOffset;
@@ -293,19 +336,19 @@ namespace Arenas {
             *entry.Value = *value;
 
             // increment count and rebalance at 75% full
-            info.Value->Version++;
-            info.Value->Count++;
-            if (info.Value->Count >= info.Value->BackingArrayLength * 3 / 4) {
-                AddCapacity();
+            self->Version++;
+            self->Count++;
+            if (self->Count >= self->BackingArrayLength * 3 / 4) {
+                AddCapacity(self, items);
             }
         }
 
-        private Entry GetIndex(int index) {
-            return GetOffset(index * info.Value->EntrySize);
+        private Entry GetIndex(UnmanagedDict* self, IntPtr items, int index) {
+            return GetOffset(self, items, index * self->EntrySize);
         }
 
-        private Entry GetOffset(int offset) {
-            return new Entry(info.Value->ItemsBuffer.Value + offset, info.Value);
+        private Entry GetOffset(UnmanagedDict* self, IntPtr items, int offset) {
+            return new Entry(items + offset, self);
         }
 
         /// <summary>
@@ -314,51 +357,57 @@ namespace Arenas {
         /// empty
         /// </summary>
         /// <returns>Entry which point to the head entry</returns>
-        private Entry GetHead() {
-            var head = info.Value->Head;
+        private Entry GetHead(UnmanagedDict* self, IntPtr items) {
+            var head = self->Head;
 
             if (head == nullOffset) {
                 // no entry in freelist, allocate via bump allocator
-                head = info.Value->Bump;
-                info.Value->Bump += info.Value->EntrySize;
+                head = self->Bump;
+                self->Bump += self->EntrySize;
                 
                 // make sure the newly allocated entry is zeroed, because
                 // we only zero the backing array on clear, not the additional
                 // memory areas
-                var headEntry = GetOffset(head);
+                var headEntry = GetOffset(self, items, head);
                 headEntry.Clear();
 
-                Debug.Assert(head < info.Value->ItemsBuffer.Size);
+                Debug.Assert(head < self->ItemsBuffer.Size);
                 Debug.Assert(headEntry.Next == nullOffset);
             }
 
-            return GetOffset(head);
+            return GetOffset(self, items, head);
         }
 
         public bool Remove(TKey key) {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot Remove item from UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot Remove item from UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
             }
 
+            var items = self->ItemsBuffer.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot Remove item from UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+            }
+
             var hashCode = GetHashCode(&key);
-            
-            if (!TryGetEntry(&key, hashCode, out var entry, out var _prev)) {
+            if (!TryGetEntry(self, items, &key, hashCode, out var entry, out var _prev)) {
                 return false;
             }
 
             if (_prev.HasValue) {
                 // entry is a linked list node, so we just unlink it
-                UnlinkEntry(entry, _prev.Value);
+                UnlinkEntry(self, entry, _prev.Value);
             }
             else {
                 // entry is in main backing array
                 if (entry.Next != nullOffset) {
                     // entry links to another value, copy the next value into the
                     // backing array and then unlink it
-                    var next = GetOffset(entry.Next);
+                    var next = GetOffset(self, items, entry.Next);
 
                     // set hashcode, key, and value but leave `next` property as
                     // is so we can subsequently call UnlinkEntry
@@ -366,26 +415,26 @@ namespace Arenas {
                     *entry.Key = *next.Key;
                     *entry.Value = *next.Value;
 
-                    UnlinkEntry(next, entry);
+                    UnlinkEntry(self, next, entry);
                 }
                 else {
                     // entry links to no values, zero out
-                    MemHelper.ZeroMemory(entry.Pointer, info.Value->EntrySize);
+                    MemHelper.ZeroMemory(entry.Pointer, self->EntrySize);
                 }
             }
 
-            info.Value->Version++;
-            info.Value->Count--;
+            self->Version++;
+            self->Count--;
             return true;
         }
 
-        private void UnlinkEntry(Entry entry, Entry prev) {
+        private void UnlinkEntry(UnmanagedDict* self, Entry entry, Entry prev) {
             // unlink node
             prev.Next = entry.Next;
 
             // insert new head node into freelist
-            var prevHead = info.Value->Head;
-            info.Value->Head = entry.Offset;
+            var prevHead = self->Head;
+            self->Head = entry.Offset;
             entry.Next = prevHead;
         }
 
@@ -393,12 +442,19 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot Remove key value pair from UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot Remove key value pair from UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
             }
 
+            var items = self->ItemsBuffer.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot Remove key value pair from UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+            }
+
             var key = item.Key;
-            var valRef = Get(&key, false);
+            var valRef = Get(self, items, &key, false);
             if (valRef != null && EqualityComparer<TValue>.Default.Equals(*valRef, item.Value)) {
                 Remove(key);
                 return true;
@@ -410,8 +466,15 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
+            }
+
+            var items = self->ItemsBuffer.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
             }
 
             if (array == null) {
@@ -439,9 +502,17 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
             }
+
+            var items = self->ItemsBuffer.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+            }
+
             return new Enumerator(this);
         }
 
@@ -458,28 +529,45 @@ namespace Arenas {
                 if (Arena is null) {
                     throw new InvalidOperationException("Cannot get item at index in UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
                 }
-                if (!info.HasValue) {
+
+                var self = info.Value;
+                if (self == null) {
                     throw new InvalidOperationException("Cannot get item at index in UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
                 }
-                return *Get(&key, true);
+
+                var items = self->ItemsBuffer.Value;
+                if (items == null) {
+                    throw new InvalidOperationException("Cannot get item at index in UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+                }
+
+                return *Get(self, items, &key, true);
             }
             set {
                 if (Arena is null) {
                     throw new InvalidOperationException("Cannot set item at index in UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
                 }
-                if (!info.HasValue) {
+
+                var self = info.Value;
+                if (self == null) {
                     throw new InvalidOperationException("Cannot set item at index in UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
                 }
-                Set(&key, &value, true);
+
+                var items = self->ItemsBuffer.Value;
+                if (items == null) {
+                    throw new InvalidOperationException("Cannot set item at index in UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+                }
+
+                Set(self, items, &key, &value, true);
             }
         }
 
         public int Count { 
             get {
-                if (!info.HasValue) {
+                var self = info.Value;
+                if (self == null) {
                     return 0;
                 }
-                return info.Value->Count;
+                return self->Count;
             } 
         }
 
@@ -488,9 +576,17 @@ namespace Arenas {
                 if (Arena is null) {
                     throw new InvalidOperationException("Cannot get Keys for UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
                 }
-                if (!info.HasValue) {
+
+                var self = info.Value;
+                if (self == null) {
                     throw new InvalidOperationException("Cannot get Keys for UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
                 }
+
+                var items = self->ItemsBuffer.Value;
+                if (items == null) {
+                    throw new InvalidOperationException("Cannot get Keys for UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+                }
+
                 return new KeyCollection(this); 
             } 
         }
@@ -499,9 +595,17 @@ namespace Arenas {
                 if (Arena is null) {
                     throw new InvalidOperationException("Cannot get Values for UnmanagedDict<TKey, TValue>: dictionary has not been properly initialized with arena reference");
                 }
-                if (!info.HasValue) {
+
+                var self = info.Value;
+                if (self == null) {
                     throw new InvalidOperationException("Cannot get Values for UnmanagedDict<TKey, TValue>: dictionary memory has previously been freed");
                 }
+
+                var items = self->ItemsBuffer.Value;
+                if (items == null) {
+                    throw new InvalidOperationException("Cannot get Values for UnmanagedDict<TKey, TValue>: dictionary's backing array has previously been freed");
+                }
+
                 return new ValueCollection(this); 
             } 
         }
@@ -556,10 +660,11 @@ namespace Arenas {
 
             internal Enumerator(ArenaDict<TKey, TValue> dict) {
                 this.dict = dict;
+                var dictPtr = dict.info.Value;
                 index = 0;
                 offset = 0;
-                version = dict.info.Value->Version;
-                count = dict.info.Value->Count;
+                version = dictPtr->Version;
+                count = dictPtr->BackingArrayLength;
                 currentKey = default;
             }
 
@@ -567,13 +672,19 @@ namespace Arenas {
             }
 
             public bool MoveNext() {
-                if (!dict.info.HasValue || version != dict.info.Value->Version) {
+                var dictPtr = dict.info.Value;
+                if (dictPtr == null || version != dictPtr->Version) {
+                    throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                }
+
+                var itemsPtr = dictPtr->ItemsBuffer.Value;
+                if (itemsPtr == null) {
                     throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                 }
 
                 while ((uint)index < (uint)count) {
                     // get current entry
-                    var entry = dict.GetOffset(offset);
+                    var entry = dict.GetOffset(dictPtr, itemsPtr, offset);
 
                     // move to next entry associated with the current index
                     offset = entry.Next;
@@ -581,7 +692,7 @@ namespace Arenas {
                         // if the position of the next entry is zero then there are no further
                         // entries at this index, increment the index and set the new offset to
                         // the head of the list (the entry in the backing array)
-                        offset = ++index * dict.info.Value->EntrySize;
+                        offset = ++index * dictPtr->EntrySize;
                     }
 
                     // only entries with a hashcode which isn't zero are valid entries
@@ -612,7 +723,8 @@ namespace Arenas {
             }
 
             void IEnumerator.Reset() {
-                if (!dict.info.HasValue || version != dict.info.Value->Version) {
+                var dictPtr = dict.info.Value;
+                if (dictPtr == null || version != dictPtr->Version || !dictPtr->ItemsBuffer.HasValue) {
                     throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                 }
 
@@ -630,15 +742,36 @@ namespace Arenas {
             }
 
             public Enumerator GetEnumerator() {
-                if (!dict.info.HasValue) {
+                if (dict.Arena is null) {
+                    throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>.KeyCollection: dictionary has not been properly initialized with arena reference");
+                }
+
+                var self = dict.info.Value;
+                if (self == null) {
                     throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>.KeyCollection: dictionary memory has previously been freed");
                 }
+
+                var items = self->ItemsBuffer.Value;
+                if (items == null) {
+                    throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>.KeyCollection: dictionary's backing array has previously been freed");
+                }
+
                 return new Enumerator(dict);
             }
 
             public void CopyTo(TKey[] array, int index) {
-                if (!dict.info.HasValue) {
+                if (dict.Arena is null) {
+                    throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>.KeyCollection: dictionary has not been properly initialized with arena reference");
+                }
+
+                var self = dict.info.Value;
+                if (self == null) {
                     throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>.KeyCollection: dictionary memory has previously been freed");
+                }
+
+                var items = self->ItemsBuffer.Value;
+                if (items == null) {
+                    throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>.KeyCollection: dictionary's backing array has previously been freed");
                 }
 
                 if (array == null) {
@@ -691,10 +824,11 @@ namespace Arenas {
 
                 internal Enumerator(ArenaDict<TKey, TValue> dict) {
                     this.dict = dict;
+                    var dictPtr = dict.info.Value;
                     index = 0;
                     offset = 0;
-                    version = dict.info.Value->Version;
-                    count = dict.info.Value->Count;
+                    version = dictPtr->Version;
+                    count = dictPtr->BackingArrayLength;
                     currentKey = default;
                 }
 
@@ -702,13 +836,19 @@ namespace Arenas {
                 }
 
                 public bool MoveNext() {
-                    if (!dict.info.HasValue || version != dict.info.Value->Version) {
+                    var dictPtr = dict.info.Value;
+                    if (dictPtr == null || version != dictPtr->Version) {
+                        throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                    }
+
+                    var itemsPtr = dictPtr->ItemsBuffer.Value;
+                    if (itemsPtr == null) {
                         throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                     }
 
                     while ((uint)index < (uint)count) {
                         // get current entry
-                        var entry = dict.GetOffset(offset);
+                        var entry = dict.GetOffset(dictPtr, itemsPtr, offset);
 
                         // move to next entry associated with the current index
                         offset = entry.Next;
@@ -716,7 +856,7 @@ namespace Arenas {
                             // if the position of the next entry is zero then there are no further
                             // entries at this index, increment the index and set the new offset to
                             // the head of the list (the entry in the backing array)
-                            offset = ++index * dict.info.Value->EntrySize;
+                            offset = ++index * dictPtr->EntrySize;
                         }
 
                         // only entries with a hashcode which isn't zero are valid entries
@@ -747,7 +887,8 @@ namespace Arenas {
                 }
 
                 void IEnumerator.Reset() {
-                    if (!dict.info.HasValue || version != dict.info.Value->Version) {
+                    var dictPtr = dict.info.Value;
+                    if (dictPtr == null || version != dictPtr->Version || !dictPtr->ItemsBuffer.HasValue) {
                         throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                     }
 
@@ -765,15 +906,36 @@ namespace Arenas {
             }
 
             public Enumerator GetEnumerator() {
-                if (!dict.info.HasValue) {
+                if (dict.Arena is null) {
+                    throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>.ValueCollection: dictionary has not been properly initialized with arena reference");
+                }
+
+                var self = dict.info.Value;
+                if (self == null) {
                     throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>.ValueCollection: dictionary memory has previously been freed");
                 }
+
+                var items = self->ItemsBuffer.Value;
+                if (items == null) {
+                    throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedDict<TKey, TValue>.ValueCollection: dictionary's backing array has previously been freed");
+                }
+
                 return new Enumerator(dict);
             }
 
             public void CopyTo(TValue[] array, int index) {
-                if (!dict.info.HasValue) {
+                if (dict.Arena is null) {
+                    throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>.ValueCollection: dictionary has not been properly initialized with arena reference");
+                }
+
+                var self = dict.info.Value;
+                if (self == null) {
                     throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>.ValueCollection: dictionary memory has previously been freed");
+                }
+
+                var items = self->ItemsBuffer.Value;
+                if (items == null) {
+                    throw new InvalidOperationException("Cannot CopyTo on UnmanagedDict<TKey, TValue>.ValueCollection: dictionary's backing array has previously been freed");
                 }
 
                 if (array == null) {
@@ -826,10 +988,11 @@ namespace Arenas {
 
                 internal Enumerator(ArenaDict<TKey, TValue> dict) {
                     this.dict = dict;
+                    var dictPtr = dict.info.Value;
                     index = 0;
                     offset = 0;
-                    version = dict.info.Value->Version;
-                    count = dict.info.Value->Count;
+                    version = dictPtr->Version;
+                    count = dictPtr->BackingArrayLength;
                     currentValue = default;
                 }
 
@@ -837,13 +1000,19 @@ namespace Arenas {
                 }
 
                 public bool MoveNext() {
-                    if (!dict.info.HasValue || version != dict.info.Value->Version) {
+                    var dictPtr = dict.info.Value;
+                    if (dictPtr == null || version != dictPtr->Version) {
+                        throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                    }
+
+                    var itemsPtr = dictPtr->ItemsBuffer.Value;
+                    if (itemsPtr == null) {
                         throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                     }
 
                     while ((uint)index < (uint)count) {
                         // get current entry
-                        var entry = dict.GetOffset(offset);
+                        var entry = dict.GetOffset(dictPtr, itemsPtr, offset);
 
                         // move to next entry associated with the current index
                         offset = entry.Next;
@@ -851,7 +1020,7 @@ namespace Arenas {
                             // if the position of the next entry is zero then there are no further
                             // entries at this index, increment the index and set the new offset to
                             // the head of the list (the entry in the backing array)
-                            offset = ++index * dict.info.Value->EntrySize;
+                            offset = ++index * dictPtr->EntrySize;
                         }
 
                         // only entries with a hashcode which isn't zero are valid entries
@@ -882,7 +1051,8 @@ namespace Arenas {
                 }
 
                 void IEnumerator.Reset() {
-                    if (!dict.info.HasValue || version != dict.info.Value->Version) {
+                    var dictPtr = dict.info.Value;
+                    if (dictPtr == null || version != dictPtr->Version || !dictPtr->ItemsBuffer.HasValue) {
                         throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                     }
 

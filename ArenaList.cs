@@ -26,24 +26,27 @@ namespace Arenas {
             }
 
             info = arena.Allocate(new UnmanagedList());
+            var self = info.Value;
 
             var minCapacity = Math.Max(capacity, defaultCapacity);
             var itemsRef = arena.AllocCount<T>(minCapacity);
 
-            info.Value->Items = (UnmanagedRef)itemsRef;
-            info.Value->Capacity = itemsRef.ElementCount; // we might get more capacity than requested
+            self->Items = (UnmanagedRef)itemsRef;
+            self->Capacity = itemsRef.ElementCount; // we might get more capacity than requested
         }
 
         public void Free() {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot Free UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot Free UnmanagedList<T>: list memory has previously been freed");
             }
 
-            info.Value->Version++;
-            var items = info.Value->Items;
+            self->Version++;
+            var items = self->Items;
             Arena.Free(items);
             Arena.Free(info);
             info = default;
@@ -53,115 +56,150 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot Clear UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot Clear UnmanagedList<T>: list memory has previously been freed");
             }
-            info.Value->Version++;
-            info.Value->Count = 0;
+
+            self->Version++;
+            self->Count = 0;
         }
 
-        private void Copy(int sourceIndex, int destIndex, int count) {
-            Debug.Assert(destIndex + count <= info.Value->Capacity, "Bad ArenaList copy");
-            var items = (T*)info.Value->Items.RawUnsafePointer;
+        private void Copy(UnmanagedList* self, T* items, int sourceIndex, int destIndex, int count) {
+            Debug.Assert(destIndex + count <= self->Capacity, "Bad ArenaList copy");
             var source = items + sourceIndex;
             var dest = items + destIndex;
-            var destSize = (info.Value->Capacity - destIndex) * sizeof(T);
-            var bytesToCopy = (info.Value->Count - sourceIndex) * sizeof(T);
+            var destSize = (self->Capacity - destIndex) * sizeof(T);
+            var bytesToCopy = (self->Count - sourceIndex) * sizeof(T);
             Buffer.MemoryCopy(source, dest, destSize, bytesToCopy);
         }
 
-        private void AddCapacity() {
-            if (info.Value->Count < info.Value->Capacity) {
-                return;
+        private T* AddCapacity(UnmanagedList* self, T* items) {
+            if (self->Count < self->Capacity) {
+                return items;
             }
 
-            var newMinCapacity = info.Value->Capacity * 2;
+            var newMinCapacity = self->Capacity * 2;
 
-            var items = info.Value->Items;
             var newItems = Arena.AllocCount<T>(newMinCapacity);
-            info.Value->Capacity = newItems.ElementCount; // we might get more capacity than requested
+            self->Capacity = newItems.ElementCount; // we might get more capacity than requested
 
             var newSize = newItems.Size;
-            Buffer.MemoryCopy((void*)items.Value, newItems.Value, newSize, newSize);
-            Arena.Free(items);
+            var newItemsPtr = newItems.Value;
 
-            info.Value->Items = (UnmanagedRef)newItems;
+            Buffer.MemoryCopy(items, newItemsPtr, newSize, newSize);
+            
+            Arena.Free(self->Items);
+            self->Items = (UnmanagedRef)newItems;
+
+            return newItemsPtr;
         }
 
         public void Add(T item) {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot Add item to UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot Add item to UnmanagedList<T>: list memory has previously been freed");
             }
-            info.Value->Version++;
-            AddCapacity();
-            ((T*)info.Value->Items.RawUnsafePointer)[info.Value->Count] = item;
-            info.Value->Count++;
+
+            var items = (T*)self->Items.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot Add item to UnmanagedList<T>: list array has previously been freed");
+            }
+
+            self->Version++;
+            items = AddCapacity(self, items);
+            items[self->Count] = item;
+            self->Count++;
         }
 
         public void Insert(int index, T item) {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot Insert item into UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot Insert item into UnmanagedList<T>: list memory has previously been freed");
             }
+
+            var items = (T*)self->Items.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot Insert item into UnmanagedList<T>: list array has previously been freed");
+            }
+
             if (index < 0 || index >= Count) {
                 throw new ArgumentOutOfRangeException(nameof(index));
             }
 
-            info.Value->Version++;
-            AddCapacity();
-
-            var items = (T*)info.Value->Items.RawUnsafePointer;
+            self->Version++;
+            items = AddCapacity(self, items);
 
             if (index == Count) {
-                items[info.Value->Count] = item;
-                info.Value->Count++;
+                items[self->Count] = item;
+                self->Count++;
                 return;
             }
 
-            Copy(index, index + 1, Count - index);
+            Copy(self, items, index, index + 1, Count - index);
             items[index] = item;
-            info.Value->Count++;
+            self->Count++;
         }
 
         public void RemoveAt(int index) {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot RemoveAt in UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot RemoveAt in UnmanagedList<T>: list memory has previously been freed");
             }
+
+            RemoveAt(self, index);
+        }
+
+        private void RemoveAt(UnmanagedList* self, int index) {
+            var items = (T*)self->Items.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot RemoveAt in UnmanagedList<T>: list array has previously been freed");
+            }
+
             if (index < 0 || index >= Count) {
                 throw new ArgumentOutOfRangeException(nameof(index));
             }
 
-            info.Value->Version++;
+            self->Version++;
 
             if (index == Count - 1) {
-                info.Value->Count--;
+                self->Count--;
                 return;
             }
 
-            info.Value->Count--;
-            Copy(index + 1, index, Count - index);
+            self->Count--;
+            Copy(self, items, index + 1, index, Count - index);
         }
 
         public bool Remove(T item) {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot Remove item from UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot Remove item from UnmanagedList<T>: list memory has previously been freed");
             }
-            var index = IndexOf(item);
+
+            var index = IndexOf(self, item);
             if (index < 0) {
                 return false;
             }
-            RemoveAt(index);
+
+            RemoveAt(self, index);
             return true;
         }
 
@@ -169,11 +207,23 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot get IndexOf item in UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot get IndexOf item in UnmanagedList<T>: list memory has previously been freed");
             }
+
+            return IndexOf(self, item);
+        }
+
+        private int IndexOf(UnmanagedList* self, T item) {
+            var items = (T*)self->Items.Value;
+            if (items == null) {
+                throw new InvalidOperationException("Cannot get IndexOf item in UnmanagedList<T>: list array has previously been freed");
+            }
+
             var count = Count;
-            var cur = (T*)info.Value->Items.RawUnsafePointer;
+            var cur = items;
 
             for (int i = 0; i < count; i++) {
                 if (EqualityComparer<T>.Default.Equals(*(cur++), item)) {
@@ -188,10 +238,13 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot check if UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot check if UnmanagedList<T> Contains item: list memory has previously been freed");
             }
-            return IndexOf(item) >= 0;
+
+            return IndexOf(self, item) >= 0;
         }
 
         public void CopyTo(T[] dest) {
@@ -206,9 +259,17 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot CopyTo array from UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot CopyTo array from UnmanagedList<T>: list memory has previously been freed");
             }
+
+            var items = self->Items;
+            if (!items.HasValue) {
+                throw new InvalidOperationException("Cannot CopyTo array from UnmanagedList<T>: list array has previously been freed");
+            }
+
             if (count < 0) {
                 throw new ArgumentOutOfRangeException(nameof(count));
             }
@@ -218,7 +279,7 @@ namespace Arenas {
             if (sourceIndex < 0 || sourceIndex + count > Count) {
                 throw new ArgumentOutOfRangeException(nameof(sourceIndex));
             }
-            var items = info.Value->Items;
+
             items.CopyTo(dest, destIndex, sourceIndex, count);
         }
 
@@ -226,9 +287,17 @@ namespace Arenas {
             if (Arena is null) {
                 throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedList<T>: list has not been properly initialized with arena reference");
             }
-            if (!info.HasValue) {
+
+            var self = info.Value;
+            if (self == null) {
                 throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedList<T>: list memory has previously been freed");
             }
+
+            var items = self->Items;
+            if (!items.HasValue) {
+                throw new InvalidOperationException("Cannot GetEnumerator for UnmanagedList<T>: list array has previously been freed");
+            }
+
             return new Enumerator(this);
         }
 
@@ -245,35 +314,54 @@ namespace Arenas {
                 if (Arena is null) {
                     throw new InvalidOperationException("Cannot get item at index in UnmanagedList<T>: list has not been properly initialized with arena reference");
                 }
-                if (!info.HasValue) {
+
+                var self = info.Value;
+                if (self == null) {
                     throw new InvalidOperationException("Cannot get item at index in UnmanagedList<T>: list memory has previously been freed");
                 }
-                if (index < 0 || index >= info.Value->Count) {
+
+                var items = (T*)self->Items.Value;
+                if (items == null) {
+                    throw new InvalidOperationException("Cannot get item at index in UnmanagedList<T>: list array has previously been freed");
+                }
+
+                if (index < 0 || index >= self->Count) {
                     throw new IndexOutOfRangeException();
                 }
-                return ((T*)info.Value->Items.RawUnsafePointer)[index];
+
+                return items[index];
             }
             set {
                 if (Arena is null) {
                     throw new InvalidOperationException("Cannot set item at index in UnmanagedList<T>: list has not been properly initialized with arena reference");
                 }
-                if (!info.HasValue) {
+
+                var self = info.Value;
+                if (self == null) {
                     throw new InvalidOperationException("Cannot set item at index in UnmanagedList<T>: list memory has previously been freed");
                 }
-                if (index < 0 || index >= info.Value->Count) {
+
+                var items = (T*)self->Items.Value;
+                if (items == null) {
+                    throw new InvalidOperationException("Cannot get item at index in UnmanagedList<T>: list array has previously been freed");
+                }
+
+                if (index < 0 || index >= self->Count) {
                     throw new IndexOutOfRangeException();
                 }
-                info.Value->Version++;
-                ((T*)info.Value->Items.RawUnsafePointer)[index] = value;
+
+                self->Version++;
+                items[index] = value;
             }
         }
 
         public int Count {
             get {
-                if (!info.HasValue) {
+                var self = info.Value;
+                if (self == null) {
                     return 0;
                 }
-                return info.Value->Count;
+                return self->Count;
             }
         }
 
@@ -291,9 +379,10 @@ namespace Arenas {
 
             internal Enumerator(ArenaList<T> list) {
                 this.list = list;
+                var listPtr = list.info.Value;
                 index = 0;
-                count = list.info.Value->Count;
-                version = list.info.Value->Version;
+                count = listPtr->Count;
+                version = listPtr->Version;
                 current = default;
             }
 
@@ -301,18 +390,22 @@ namespace Arenas {
             }
 
             public bool MoveNext() {
-                ArenaList<T> localList = list;
+                var listPtr = list.info.Value;
 
-                if (list.info.HasValue && version == localList.info.Value->Version && ((uint)index < (uint)count)) {
-                    current = localList[index];
-                    index++;
-                    return true;
+                if (listPtr != null && version == listPtr->Version && ((uint)index < (uint)count)) {
+                    var items = (T*)listPtr->Items.Value;
+                    if (items != null) {
+                        current = items[index];
+                        index++;
+                        return true;
+                    }
                 }
                 return MoveNextRare();
             }
 
             private bool MoveNextRare() {
-                if (!list.info.HasValue || version != list.info.Value->Version) {
+                var listPtr = list.info.Value;
+                if (listPtr == null || version != listPtr->Version || !listPtr->Items.HasValue) {
                     throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                 }
 
@@ -327,7 +420,7 @@ namespace Arenas {
                 }
             }
 
-            object System.Collections.IEnumerator.Current {
+            object IEnumerator.Current {
                 get {
                     if (index == 0 || index == count + 1) {
                         throw new InvalidOperationException("Enumeration has either not started or has already finished.");
@@ -336,8 +429,9 @@ namespace Arenas {
                 }
             }
 
-            void System.Collections.IEnumerator.Reset() {
-                if (!list.info.HasValue || version != list.info.Value->Version) {
+            void IEnumerator.Reset() {
+                var listPtr = list.info.Value;
+                if (listPtr == null || version != listPtr->Version || !listPtr->Items.HasValue) {
                     throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
                 }
 
