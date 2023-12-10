@@ -16,7 +16,7 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 - Can enumerate over all entries in the arena
 - Allocate any count of items
 - Allocate generic buffers of any size by allocating using `AllocCount<byte>(sizeInBytes)`
-- Arena object pooling via ArenaPool. Use `ArenaPool.Default.Get()` with `ArenaPool.Default.Return` or `using (ArenaPool.Default.Borrow(out var arena))` to return arenas at the end of the `using` block
+- Arena object pooling via ArenaPool. Use `ArenaPool.Default.Get()` with `ArenaPool.Default.Return` or automatically return arenas at the end of a `using` block with `using (ArenaPool.Default.Borrow(out var arena))`
 - Optimal allocations for buffers where the size doesn't matter to the caller through the `AllocRoughly` method (size may be smaller than requested)
 - Debug view will show list of items for `UnmanagedRef` types (handy when inspecting multiple elements)
 - Copy `UnmanagedRef` types to arrays via `ToArray` and `CopyTo`
