@@ -286,7 +286,6 @@ static unsafe void ArenaArenas() {
 ## Potential future work
 
 - More arena-specific generic collections like HashSet/Stack/Queue/LinkedList
-- Easy object pool for arenas, because arenas do cause some allocations
 - Arena-specific string type
 - ManagedObject struct which exists purely to store references to managed objects in arenas?
 - Custom per-arena tracing GC?
