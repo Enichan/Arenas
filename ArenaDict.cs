@@ -388,7 +388,10 @@ namespace Arenas {
             // we only zero the backing array on clear, not the additional
             // memory areas
             var headEntry = GetOffset(self, items, head);
-            headEntry.Clear();
+
+            // don't actually need to clear, just set Next to 0
+            //headEntry.Clear();
+            headEntry.Next = nullOffset;
 
             Debug.Assert(head < self->ItemsBuffer.Size);
             Debug.Assert(headEntry.Next == nullOffset);
