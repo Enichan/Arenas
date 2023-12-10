@@ -9,7 +9,11 @@ namespace Arenas {
         }
 
         public static void Add<T>(this ArenaList<IntPtr> list, in T uref) where T : struct, IUnmanagedRef {
-            list.Add(uref.Reference.RawUnsafePointer);
+            var pointer = uref.Reference.Value;
+            if (pointer == IntPtr.Zero) {
+                throw new ArgumentNullException(nameof(uref));
+            }
+            list.Add(pointer);
         }
     }
 }
