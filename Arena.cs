@@ -12,12 +12,13 @@ using static Arenas.TypeInfo;
 
 namespace Arenas {
     // NOTE: all items allocated to the arena will be aligned to a 64-bit word boundary and their size will be a multiple of 64-bits
-    public unsafe class Arena : IDisposable, IEnumerable<UnmanagedRef> {
+    public unsafe class Arena : IDisposable, IEnumerable<UnmanagedRef>, IArenaPoolable {
         public const int DefaultPageSize = 4096;
         public const int MinimumPageSize = 256;
 
         private Dictionary<object, ObjectEntry> objToPtr;
         private bool disposedValue;
+        private bool finalized;
         private List<Page> pages;
         private Dictionary<int, Freelist> freelists;
         private ArenaID id;
@@ -38,13 +39,20 @@ namespace Arenas {
             }
 
             this.pageSize = pageSize;
-            objToPtr = new Dictionary<object, ObjectEntry>(ObjectReferenceEqualityComparer.Instance);
-            pages = new List<Page>();
-            freelists = new Dictionary<int, Freelist>();
             Allocator = allocator ?? throw new ArgumentNullException(nameof(allocator));
+            Init();
 
             // call clear to set up everything we need for use
             Clear(false);
+        }
+
+        private void Init() {
+            initialized = false;
+
+            objToPtr = objToPtr ?? new Dictionary<object, ObjectEntry>(ObjectReferenceEqualityComparer.Instance);
+            pages = pages ?? new List<Page>();
+            freelists = freelists ?? new Dictionary<int, Freelist>();
+            Allocator = Allocator ?? DefaultAllocator;
         }
 
         public UnmanagedRef<T> UnmanagedRefFromPtr<T>(T* ptr) where T : unmanaged {
@@ -101,8 +109,8 @@ namespace Arenas {
             size = MemHelper.AlignCeil(size, pageSize);
 
             // allocate pointer, potentially unaligned to 64-bit word
-            var alloc = (Allocator ?? DefaultAllocator).Allocate(size);
-            
+            var alloc = Allocator.Allocate(size);
+
             var mem = alloc.Pointer;
             var actualSize = MemHelper.AlignFloor(alloc.SizeBytes, sizeof(ulong));
             Debug.Assert(actualSize >= size);
@@ -488,7 +496,7 @@ namespace Arenas {
             }
 
             // free page memory
-            var allocator = Allocator ?? DefaultAllocator;
+            var allocator = Allocator;
             foreach (var page in pages) {
                 page.Free(allocator);
             }
@@ -517,6 +525,21 @@ namespace Arenas {
             }
         }
 
+        bool IArenaPoolable.ResetForPool() {
+            if (finalized) {
+                return false;
+            }
+
+            if (disposedValue) {
+                disposedValue = false;
+                GC.ReRegisterForFinalize(this);
+                Init();
+            }
+
+            Clear();
+            return true;
+        }
+
         #region IEnumerable
         public Enumerator GetEnumerator() {
             return new Enumerator(this);
@@ -542,10 +565,6 @@ namespace Arenas {
                 // set large fields to null
                 Clear(true, !disposing);
 
-                pages = null;
-                freelists = null;
-                objToPtr = null;
-
                 disposedValue = true;
             }
         }
@@ -553,6 +572,7 @@ namespace Arenas {
         ~Arena() {
             // Do not change this code. Put cleanup code in 'Dispose(bool disposing)' method
             Dispose(disposing: false);
+            finalized = true;
         }
 
         public void Dispose() {
