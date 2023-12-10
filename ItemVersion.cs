@@ -101,7 +101,7 @@ namespace Arenas {
 
         public override string ToString() {
             var v = Version;
-            return !Valid ? $"{v:x} (invalid)" : $"{v}";
+            return !Valid ? $"{v} (invalid)" : $"{v}";
         }
 
         public int ElementCount { get { return IsShortVersion ? (rawValue & elementCountMask) >> elementCountBitIndex : 0; } }
