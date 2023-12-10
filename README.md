@@ -16,6 +16,7 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 - Can enumerate over all entries in the arena
 - Allocate any count of items
 - Allocate generic buffers of any size by allocating using `AllocCount<byte>(sizeInBytes)`
+- Arena object pooling via ArenaPool. Use `ArenaPool.Default.Get()` with `ArenaPool.Default.Return` or automatically return arenas at the end of a `using` block with `using (ArenaPool.Default.Borrow(out var arena))`
 - Optimal allocations for buffers where the size doesn't matter to the caller through the `AllocRoughly` method (size may be smaller than requested)
 - Debug view will show list of items for `UnmanagedRef` types (handy when inspecting multiple elements)
 - Copy `UnmanagedRef` types to arrays via `ToArray` and `CopyTo`
@@ -23,7 +24,7 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 - Ability to free items via `IntPtr`
 - `UnmanagedRef` is a lightweight struct (only 16 bytes in size) but will cache element counts (always for 7 or fewer elements, and for 32k or fewer elements until item versions exceed 32k)
 - `UnmanagedRef` is blittable and can itself be stored inside arenas (see samples)
-- Ability to use custom memory allocator for allocating page memory, as well as page size
+- Ability to use custom memory allocator for allocating page memory, as well as custom page size
 
 ## Samples
 
@@ -285,7 +286,6 @@ static unsafe void ArenaArenas() {
 ## Potential future work
 
 - More arena-specific generic collections like HashSet/Stack/Queue/LinkedList
-- Easy object pool for arenas, because arenas do cause some allocations
 - Arena-specific string type
 - ManagedObject struct which exists purely to store references to managed objects in arenas?
 - Custom per-arena tracing GC?
