@@ -15,6 +15,10 @@ namespace Arenas {
         private const int noneHashCode = 0;
         private const int nullOffset = 0;
 
+        private static int RebalanceCount(int capacity) {
+            return capacity * 3 / 4;
+        }
+
         private UnmanagedRef<UnmanagedDict> info;
 
         public ArenaDict(Arena arena, int capacity = defaultCapacity) {
@@ -58,12 +62,29 @@ namespace Arenas {
             var entryInfo = TypeInfo.GenerateTypeInfo<UnmanagedDictEntry>();
             var entrySize = MemHelper.AlignCeil(typeK.Size + typeV.Size + entryInfo.Size, sizeof(ulong));
 
+            // Old comment:
             // now we know entry size, calculate the actual amount of memory needed
             // this needs to be twice the amount in case of a worst case scenario of all items mapping
             // to the same hashcode, that way we know we always have enough capacity outside of the
             // backing array 
+
+            // New comment:
+            // actually we only need as much overflow storage as 75% of the capacity in order to make
+            // sure that there's always enough room for items before rebalancing, so just use the
+            // rebalancing amount to determine the extra overflow storage space needed. this is still
+            // 1 item more than we actually need, because even in the worst case the head is always
+            // stored inside the backing array, but idk, off by one errors are scary and there's no
+            // need to ditch the spare bonus item just in case
+            //
+            // by keeping the overflow size a little smaller than the power-of-two sized backing array
+            // we usually wind up with a size a little under a power of 2 in size, which is useful
+            // for memory efficiency because the arena will dole out chunks of power-of-two minus the
+            // size of an item header in memory, so requesting a full power of two actually doubles the
+            // amount allocated but requesting slightly less means we wind up with basically exactly
+            // the amount we want so overhead becomes way lower
             var size = capacity * entrySize;
-            size *= 2; // extra space for linked lists
+            //size *= 2; // extra space for linked lists
+            size += RebalanceCount(capacity) * entrySize;
             var itemsRef = arena.AllocCount<byte>(size); // alloc memory buffer
 
             var backingArrayLength = capacity;
@@ -80,7 +101,8 @@ namespace Arenas {
             self->ItemsBuffer = (UnmanagedRef)itemsRef;
             self->BackingArrayLength = capacity;
             self->OverflowLength = itemsRef.Size / entrySize - backingArrayLength;
-            Debug.Assert(self->OverflowLength >= self->BackingArrayLength);
+            //Debug.Assert(self->OverflowLength >= self->BackingArrayLength);
+            Debug.Assert(self->OverflowLength >= RebalanceCount(self->BackingArrayLength) - 1);
 
             // position our bump allocator to the end of the backing array
             // this is used to allocate new entries when the freelist is empty
@@ -354,7 +376,7 @@ namespace Arenas {
             // increment count and rebalance at 75% full
             self->Version++;
             self->Count++;
-            if (self->Count >= self->BackingArrayLength * 3 / 4) {
+            if (self->Count >= RebalanceCount(self->BackingArrayLength)) {
                 AddCapacity(self, ref items);
             }
         }
