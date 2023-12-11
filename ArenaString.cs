@@ -31,6 +31,9 @@ namespace Arenas {
             contents = arena.AllocCount<char>(capacity + 2);
         }
 
+        // TODO: Contains via IndexOf
+
+        #region CopyFrom
         private char* InitCopy(out int capacity) {
             var arena = contents.Arena;
             if (arena is null) {
@@ -46,7 +49,6 @@ namespace Arenas {
             return ptr;
         }
 
-        #region CopyFrom
         #region Copy from string
         public bool TryCopyFrom(string str, int index, int length) {
             if (length == 0) {
@@ -400,6 +402,236 @@ namespace Arenas {
         #endregion
         #endregion
 
+        #region (Last)IndexOf
+        #region (Last)IndexOf char
+        private int IndexOf(char c, int index, int length, int selfLength, bool reverse) {
+            if (index < 0 || index > selfLength) {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+            if (length < 0 || index + length > selfLength) {
+                throw new ArgumentOutOfRangeException(nameof(length));
+            }
+
+            var contents = Contents;
+            var end = index + length;
+
+            if (reverse) {
+                for (int i = end - 1; i >= index; i--) {
+                    if (contents[i] == c) {
+                        return i;
+                    }
+                }
+            }
+            else {
+                for (int i = index; i < end; i++) {
+                    if (contents[i] == c) {
+                        return i;
+                    }
+                }
+            }
+
+            return -1;
+        }
+
+        public int IndexOf(char c, int index, int length) {
+            return IndexOf(c, index, length, Length, false);
+        }
+
+        public int IndexOf(char c, int index) {
+            var selfLength = Length;
+            return IndexOf(c, index, selfLength - index, selfLength, false);
+        }
+
+        public int IndexOf(char c) {
+            var selfLength = Length;
+            return IndexOf(c, 0, selfLength, selfLength, false);
+        }
+
+        public int LastIndexOf(char c, int index, int length) {
+            return IndexOf(c, index, length, Length, true);
+        }
+
+        public int LastIndexOf(char c, int index) {
+            var selfLength = Length;
+            return IndexOf(c, index, selfLength - index, selfLength, true);
+        }
+
+        public int LastIndexOf(char c) {
+            var selfLength = Length;
+            return IndexOf(c, 0, selfLength, selfLength, true);
+        }
+        #endregion
+
+        #region (Last)IndexOf string
+        private int IndexOf(string source, int searchIndex, int searchLength, int sourceIndex, int sourceLength, int selfLength, bool reverse) {
+            if (source is null) {
+                throw new ArgumentNullException(nameof(source));
+            }
+            if (searchIndex < 0 || searchIndex > selfLength) {
+                throw new ArgumentOutOfRangeException(nameof(searchIndex));
+            }
+            if (searchLength < 0 || searchIndex + searchLength > selfLength) {
+                throw new ArgumentOutOfRangeException(nameof(searchLength));
+            }
+            if (sourceIndex < 0 || sourceIndex > source.Length) {
+                throw new ArgumentOutOfRangeException(nameof(sourceIndex));
+            }
+            if (sourceIndex < 0 || sourceIndex + sourceLength > source.Length) {
+                throw new ArgumentOutOfRangeException(nameof(sourceLength));
+            }
+            if (source == "" || sourceLength == 0) {
+                return 0;
+            }
+
+            var contents = Contents;
+            var end = searchIndex + searchLength;
+            end -= sourceLength;
+
+            var sourceEnd = sourceIndex + sourceLength;
+
+            if (reverse) {
+                for (int i = end - 1; i >= searchIndex; i--) {
+                    var cmpi = i;
+                    for (int j = sourceIndex; i < sourceEnd; i++, cmpi++) {
+                        if (contents[cmpi] != source[j]) {
+                            cmpi = -1;
+                            break;
+                        }
+                    }
+                    if (cmpi > -1) {
+                        return i;
+                    }
+                }
+            }
+            else {
+                for (int i = searchIndex; i < end; i++) {
+                    var cmpi = i;
+                    for (int j = sourceIndex; i < sourceEnd; i++, cmpi++) {
+                        if (contents[cmpi] != source[j]) {
+                            cmpi = -1;
+                            break;
+                        }
+                    }
+                    if (cmpi > -1) {
+                        return i;
+                    }
+                }
+            }
+
+            return -1;
+        }
+
+        public int IndexOf(string source, int searchIndex, int searchLength, int sourceIndex, int sourceLength) {
+            return IndexOf(source, searchIndex, searchLength, sourceIndex, sourceLength, Length, false);
+        }
+
+        public int IndexOf(string str, int index, int length) {
+            return IndexOf(str, index, length, 0, str.Length, Length, false);
+        }
+
+        public int IndexOf(string str, int index) {
+            var selfLength = Length;
+            return IndexOf(str, index, selfLength - index, 0, str.Length, selfLength, false);
+        }
+
+        public int IndexOf(string str) {
+            var selfLength = Length;
+            return IndexOf(str, 0, selfLength, 0, str.Length, selfLength, false);
+        }
+
+        public int LastIndexOf(string source, int searchIndex, int searchLength, int sourceIndex, int sourceLength) {
+            return IndexOf(source, searchIndex, searchLength, sourceIndex, sourceLength, Length, true);
+        }
+
+        public int LastIndexOf(string str, int index, int length) {
+            return IndexOf(str, index, length, 0, str.Length, Length, true);
+        }
+
+        public int LastIndexOf(string str, int index) {
+            var selfLength = Length;
+            return IndexOf(str, index, selfLength - index, 0, str.Length, selfLength, true);
+        }
+
+        public int LastIndexOf(string str) {
+            var selfLength = Length;
+            return IndexOf(str, 0, selfLength, 0, str.Length, selfLength, true);
+        }
+        #endregion
+        #endregion
+
+        #region (Last)IndexOfAny
+        #region (Last)IndexOf char[]
+        private int IndexOfAny(char[] chars, int index, int length, int selfLength, bool reverse) {
+            if (chars is null) {
+                throw new ArgumentNullException(nameof(chars));
+            }
+            if (index < 0 || index > selfLength) {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+            if (length < 0 || index + length > selfLength) {
+                throw new ArgumentOutOfRangeException(nameof(length));
+            }
+            if (chars.Length == 0) {
+                return 0;
+            }
+
+            var contents = Contents;
+            var end = index + length;
+
+            if (reverse) {
+                for (int i = end - 1; i >= index; i--) {
+                    var c = contents[i];
+                    for (int j = 0; j < chars.Length; j++) {
+                        if (c == chars[j]) {
+                            return i;
+                        }
+                    }
+                }
+            }
+            else {
+                for (int i = index; i < end; i++) {
+                    var c = contents[i];
+                    for (int j = 0; j < chars.Length; j++) {
+                        if (c == chars[j]) {
+                            return i;
+                        }
+                    }
+                }
+            }
+
+            return -1;
+        }
+
+        public int IndexOfAny(char[] chars, int index, int length) {
+            return IndexOfAny(chars, index, length, Length, false);
+        }
+
+        public int IndexOfAny(char[] chars, int index) {
+            var selfLength = Length;
+            return IndexOfAny(chars, index, selfLength - index, selfLength, false);
+        }
+
+        public int IndexOfAny(char[] chars) {
+            var selfLength = Length;
+            return IndexOfAny(chars, 0, selfLength, selfLength, false);
+        }
+
+        public int LastIndexOfAny(char[] chars, int index, int length) {
+            return IndexOfAny(chars, index, length, Length, true);
+        }
+
+        public int LastIndexOfAny(char[] chars, int index) {
+            var selfLength = Length;
+            return IndexOfAny(chars, index, selfLength - index, selfLength, true);
+        }
+
+        public int LastIndexOfAny(char[] chars) {
+            var selfLength = Length;
+            return IndexOfAny(chars, 0, selfLength, selfLength, true);
+        }
+        #endregion
+        #endregion
+
         // doable in place
         // Contains
         // CopyTo
@@ -414,7 +646,6 @@ namespace Arenas {
         // ToUpper(Invariant)
         // Remove
         // Replace (char)
-        // Substring
 
         // doable with reallocations
         // Insert
