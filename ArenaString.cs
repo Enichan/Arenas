@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.ConstrainedExecution;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -33,78 +34,201 @@ namespace Arenas {
         private char* InitCopy(out int capacity) {
             var arena = contents.Arena;
             if (arena is null) {
-                capacity = 0;
-                return null;
+                throw new InvalidOperationException("Cannot CopyFrom in ArenaString: string has not been properly initialized with arena reference");
             }
 
-            var ptr = (IntPtr)contents;
-            if (ptr == IntPtr.Zero) {
-                capacity = 0;
-                return null;
+            var ptr = contents.Value;
+            if (ptr == null) {
+                throw new InvalidOperationException("Cannot CopyFrom in ArenaString: string memory has previously been freed");
             }
 
-            var uref = arena.UnmanagedRefFromPtr<char>(ptr);
-            capacity = uref.ElementCount - 2;
-            return (char*)(IntPtr)uref;
+            capacity = contents.ElementCount - 2;
+            return ptr;
         }
 
-        public bool TryCopyFrom(string s) {
+        #region CopyFrom
+        #region Copy from string
+        public bool TryCopyFrom(string str, int index, int length) {
+            if (length == 0) {
+                Length = 0;
+                return true;
+            }
+            if (str is null) {
+                throw new ArgumentNullException(nameof(str));
+            }
+            if (length < 0) {
+                throw new ArgumentOutOfRangeException(nameof(length));
+            }
+            if (index < 0 || index + length > str.Length) {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
             int capacity;
             var cur = InitCopy(out capacity);
 
-            if (cur == null || s.Length > capacity) {
+            if (length > capacity) {
                 return false;
             }
 
-            for (int i = 0; i < s.Length; i++) {
-                *(cur++) = s[i];
+            var end = index + length;
+            for (int i = index; i < end; i++) {
+                *(cur++) = str[i];
             }
 
-            Length = s.Length;
+            Length = length;
             return true;
         }
 
-        public void CopyFrom(string s) {
-            if (!TryCopyFrom(s)) {
+        public void CopyFrom(string str, int index, int length) {
+            if (!TryCopyFrom(str)) {
                 throw new InvalidOperationException("Cannot CopyFrom string in ArenaString: insufficient capacity");
             }
         }
 
-        public bool TryCopyFrom(char[] chars) {
+        public bool TryCopyFrom(string str, int index) {
+            return TryCopyFrom(str, index, str.Length - index);
+        }
+
+        public bool TryCopyFrom(string str) {
+            return TryCopyFrom(str, 0, str.Length);
+        }
+
+        public void CopyFrom(string str, int index) {
+            CopyFrom(str, index, str.Length - index);
+        }
+
+        public void CopyFrom(string str) {
+            CopyFrom(str, 0, str.Length);
+        }
+        #endregion
+
+        #region Copy from StringBuilder
+        public bool TryCopyFrom(StringBuilder str, int index, int length) {
+            if (length == 0) {
+                Length = 0;
+                return true;
+            }
+            if (str is null) {
+                throw new ArgumentNullException(nameof(str));
+            }
+            if (length < 0) {
+                throw new ArgumentOutOfRangeException(nameof(length));
+            }
+            if (index < 0 || index + length > str.Length) {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
             int capacity;
             var cur = InitCopy(out capacity);
 
-            if (cur == null || chars.Length > capacity) {
+            if (length > capacity) {
                 return false;
             }
 
-            Marshal.Copy(chars, 0, (IntPtr)cur, chars.Length);
-            Length = chars.Length;
+            var end = index + length;
+            for (int i = index; i < end; i++) {
+                *(cur++) = str[i];
+            }
+
+            Length = length;
             return true;
         }
 
-        public void CopyFrom(char[] chars) {
-            if (!TryCopyFrom(chars)) {
+        public void CopyFrom(StringBuilder str, int index, int length) {
+            if (!TryCopyFrom(str)) {
+                throw new InvalidOperationException("Cannot CopyFrom StringBuilder in ArenaString: insufficient capacity");
+            }
+        }
+
+        public bool TryCopyFrom(StringBuilder str, int index) {
+            return TryCopyFrom(str, index, str.Length - index);
+        }
+
+        public bool TryCopyFrom(StringBuilder str) {
+            return TryCopyFrom(str, 0, str.Length);
+        }
+
+        public void CopyFrom(StringBuilder str, int index) {
+            CopyFrom(str, index, str.Length - index);
+        }
+
+        public void CopyFrom(StringBuilder str) {
+            CopyFrom(str, 0, str.Length);
+        }
+        #endregion
+
+        #region Copy from char[]
+        public bool TryCopyFrom(char[] chars, int index, int length) {
+            if (length == 0) {
+                Length = 0;
+                return true;
+            }
+            if (chars is null) {
+                throw new ArgumentNullException(nameof(chars));
+            }
+            if (length < 0) {
+                throw new ArgumentOutOfRangeException(nameof(length));
+            }
+            if (index < 0 || index + length > chars.Length) {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
+            int capacity;
+            var cur = InitCopy(out capacity);
+
+            if (length > capacity) {
+                return false;
+            }
+
+            Marshal.Copy(chars, index, (IntPtr)cur, length);
+            Length = length;
+            return true;
+        }
+
+        public void CopyFrom(char[] chars, int index, int length) {
+            if (!TryCopyFrom(chars, index, length)) {
                 throw new InvalidOperationException("Cannot CopyFrom char[] in ArenaString: insufficient capacity");
             }
         }
 
-        public bool TryCopyFrom(char* ptr, int length) {
+        public bool TryCopyFrom(char[] chars, int index) {
+            return TryCopyFrom(chars, index, chars.Length - index);
+        }
+
+        public bool TryCopyFrom(char[] chars) {
+            return TryCopyFrom(chars, 0, chars.Length);
+        }
+
+        public void CopyFrom(char[] chars, int index) {
+            CopyFrom(chars, index, chars.Length - index);
+        }
+
+        public void CopyFrom(char[] chars) {
+            CopyFrom(chars, 0, chars.Length);
+        }
+        #endregion
+
+        #region Copy from char*
+        public bool TryCopyFrom(char* charPtr, int length) {
+            if (length == 0) {
+                Length = 0;
+                return true;
+            }
+            if (charPtr == null) {
+                throw new ArgumentNullException(nameof(charPtr));
+            }
             if (length < 0) {
                 throw new ArgumentOutOfRangeException(nameof(length));
-            }
-            if (ptr == null) {
-                throw new ArgumentNullException(nameof(ptr));
             }
 
             int capacity;
             var dest = InitCopy(out capacity);
 
-            if (dest == null || length > capacity) {
+            if (length > capacity) {
                 return false;
             }
 
-            Buffer.MemoryCopy(ptr, dest, capacity * sizeof(char), length * sizeof(char));
+            Buffer.MemoryCopy(charPtr, dest, capacity * sizeof(char), length * sizeof(char));
             Length = length;
             return true;
         }
@@ -120,28 +244,161 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot CopyFrom char* in ArenaString: insufficient capacity");
             }
         }
+        #endregion
 
-        public bool TryCopyFrom(List<char> list) {
+        #region Copy from List<char>
+        public bool TryCopyFrom(List<char> list, int index, int length) {
+            if (length == 0) {
+                Length = 0;
+                return true;
+            }
+            if (list is null) {
+                throw new ArgumentNullException(nameof(list));
+            }
+            if (length < 0) {
+                throw new ArgumentOutOfRangeException(nameof(length));
+            }
+            if (index < 0 || index + length > list.Count) {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
             int capacity;
             var cur = InitCopy(out capacity);
 
-            if (cur == null || list.Count > capacity) {
+            if (length > capacity) {
                 return false;
             }
 
-            for (int i = 0; i < list.Count; i++) {
+            var end = index + length;
+            for (int i = index; i < end; i++) {
                 *(cur++) = list[i];
             }
 
-            Length = list.Count;
+            Length = length;
             return true;
         }
 
-        public void CopyFrom(List<char> list) {
-            if (!TryCopyFrom(list)) {
+        public void CopyFrom(List<char> list, int index, int length) {
+            if (!TryCopyFrom(list, index, length)) {
                 throw new InvalidOperationException("Cannot CopyFrom List<char> in ArenaString: insufficient capacity");
             }
         }
+
+        public bool TryCopyFrom(List<char> list, int index) {
+            return TryCopyFrom(list, index, list.Count - index);
+        }
+
+        public bool TryCopyFrom(List<char> list) {
+            return TryCopyFrom(list, 0, list.Count);
+        }
+
+        public void CopyFrom(List<char> list, int index) {
+            CopyFrom(list, index, list.Count - index);
+        }
+
+        public void CopyFrom(List<char> list) {
+            CopyFrom(list, 0, list.Count);
+        }
+        #endregion
+
+        #region Copy from IList<char>
+        public bool TryCopyFrom(IList<char> list, int index, int length) {
+            if (length == 0) {
+                Length = 0;
+                return true;
+            }
+            if (list is null) {
+                throw new ArgumentNullException(nameof(list));
+            }
+            if (length < 0) {
+                throw new ArgumentOutOfRangeException(nameof(length));
+            }
+            if (index < 0 || index + length > list.Count) {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
+            int capacity;
+            var cur = InitCopy(out capacity);
+
+            if (length > capacity) {
+                return false;
+            }
+
+            var end = index + length;
+            for (int i = index; i < end; i++) {
+                *(cur++) = list[i];
+            }
+
+            Length = length;
+            return true;
+        }
+
+        public void CopyFrom(IList<char> list, int index, int length) {
+            if (!TryCopyFrom(list, index, length)) {
+                throw new InvalidOperationException("Cannot CopyFrom List<char> in ArenaString: insufficient capacity");
+            }
+        }
+
+        public bool TryCopyFrom(IList<char> list, int index) {
+            return TryCopyFrom(list, index, list.Count - index);
+        }
+
+        public bool TryCopyFrom(IList<char> list) {
+            return TryCopyFrom(list, 0, list.Count);
+        }
+
+        public void CopyFrom(IList<char> list, int index) {
+            CopyFrom(list, index, list.Count - index);
+        }
+
+        public void CopyFrom(List<char> list) {
+            CopyFrom(list, 0, list.Count);
+        }
+        #endregion
+
+        #region Copy from ICollection<char>
+        public bool TryCopyFrom(ICollection<char> col, int length) {
+            if (length == 0) {
+                Length = 0;
+                return true;
+            }
+            if (col is null) {
+                throw new ArgumentNullException(nameof(col));
+            }
+            if (length < 0 || length > col.Count) {
+                throw new ArgumentOutOfRangeException(nameof(length));
+            }
+
+            int capacity;
+            var cur = InitCopy(out capacity);
+
+            if (length > capacity) {
+                return false;
+            }
+
+            foreach (var c in col) {
+                *(cur++) = c;
+            }
+
+            Length = length;
+            return true;
+        }
+
+        public void CopyFrom(ICollection<char> col, int length) {
+            if (!TryCopyFrom(col, length)) {
+                throw new InvalidOperationException("Cannot CopyFrom ICollection<char> in ArenaString: insufficient capacity");
+            }
+        }
+
+        public bool TryCopyFrom(ICollection<char> col) {
+            return TryCopyFrom(col, col.Count);
+        }
+
+        public void CopyFrom(ICollection<char> col) {
+            CopyFrom(col, col.Count);
+        }
+        #endregion
+        #endregion
 
         // doable in place
         // Contains
