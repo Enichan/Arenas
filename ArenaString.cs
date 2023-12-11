@@ -350,7 +350,7 @@ namespace Arenas {
             CopyFrom(list, index, list.Count - index);
         }
 
-        public void CopyFrom(List<char> list) {
+        public void CopyFrom(IList<char> list) {
             CopyFrom(list, 0, list.Count);
         }
         #endregion
@@ -401,7 +401,7 @@ namespace Arenas {
 
         #region (Last)IndexOf
         #region (Last)IndexOf char
-        private int IndexOf(char c, int index, int length, int selfLength, bool reverse) {
+        private int IndexOf(char c, int index, int length, int selfLength, bool reverse, bool checkArena = true, char* contents = null) {
             if (index < 0 || index > selfLength) {
                 throw new ArgumentOutOfRangeException(nameof(index));
             }
@@ -409,13 +409,15 @@ namespace Arenas {
                 throw new ArgumentOutOfRangeException(nameof(length));
             }
 
-            if (Arena is null) {
+            if (checkArena && Arena is null) {
                 throw new InvalidOperationException("Cannot IndexOf in ArenaString: string has not been properly initialized with arena reference");
             }
 
-            var contents = this.contents.Value;
             if (contents == null) {
-                throw new InvalidOperationException("Cannot IndexOf in ArenaString: string memory has previously been freed");
+                contents = this.contents.Value;
+                if (contents == null) {
+                    throw new InvalidOperationException("Cannot IndexOf in ArenaString: string memory has previously been freed");
+                }
             }
 
             var end = index + length;
@@ -433,7 +435,6 @@ namespace Arenas {
                     }
                 }
             }
-
             return -1;
         }
 
@@ -467,7 +468,7 @@ namespace Arenas {
         #endregion
 
         #region (Last)IndexOf string
-        private int IndexOf(string source, int searchIndex, int searchLength, int sourceIndex, int sourceLength, int selfLength, bool reverse) {
+        private int IndexOf(string source, int searchIndex, int searchLength, int sourceIndex, int sourceLength, int selfLength, bool reverse, bool checkArena = true, char* contents = null) {
             if (source is null) {
                 throw new ArgumentNullException(nameof(source));
             }
@@ -487,13 +488,15 @@ namespace Arenas {
                 return 0;
             }
 
-            if (Arena is null) {
+            if (checkArena && Arena is null) {
                 throw new InvalidOperationException("Cannot IndexOf in ArenaString: string has not been properly initialized with arena reference");
             }
 
-            var contents = this.contents.Value;
             if (contents == null) {
-                throw new InvalidOperationException("Cannot IndexOf in ArenaString: string memory has previously been freed");
+                contents = this.contents.Value;
+                if (contents == null) {
+                    throw new InvalidOperationException("Cannot IndexOf in ArenaString: string memory has previously been freed");
+                }
             }
 
             var end = searchIndex + searchLength;
@@ -706,6 +709,98 @@ namespace Arenas {
             fixed (char* charPtr = destination) {
                 CopyTo(sourceIndex, charPtr, count);
             }
+        }
+        #endregion
+
+        #region EndsWith
+        public bool EndsWith(char value) {
+            if (Arena is null) {
+                throw new InvalidOperationException("Cannot EndsWith in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = this.contents.Value;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot EndsWith in ArenaString: string memory has previously been freed");
+            }
+
+            var selfLength = Length;
+            if (selfLength < 1) {
+                return false;
+            }
+
+            return IndexOf(value, selfLength - 1, 1, selfLength, false, false, contents) > -1;
+        }
+
+        public bool EndsWith(string source, int sourceIndex, int sourceLength) {
+            if (Arena is null) {
+                throw new InvalidOperationException("Cannot EndsWith in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = this.contents.Value;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot EndsWith in ArenaString: string memory has previously been freed");
+            }
+
+            var selfLength = Length;
+            if (selfLength < sourceLength) {
+                return false;
+            }
+
+            return IndexOf(source, selfLength - sourceLength, 1, sourceIndex, sourceLength, selfLength, false, false, contents) > -1;
+        }
+
+        public bool EndsWith(string source, int sourceIndex) {
+            return EndsWith(source, sourceIndex, source.Length - sourceIndex);
+        }
+
+        public bool EndsWith(string source) {
+            return EndsWith(source, 0, source.Length);
+        }
+        #endregion
+
+        #region StartsWith
+        public bool StartsWith(char value) {
+            if (Arena is null) {
+                throw new InvalidOperationException("Cannot StartsWith in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = this.contents.Value;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot StartsWith in ArenaString: string memory has previously been freed");
+            }
+
+            var selfLength = Length;
+            if (selfLength < 1) {
+                return false;
+            }
+
+            return IndexOf(value, 0, 1, selfLength, false, false, contents) > -1;
+        }
+
+        public bool StartsWith(string source, int sourceIndex, int sourceLength) {
+            if (Arena is null) {
+                throw new InvalidOperationException("Cannot StartsWith in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = this.contents.Value;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot StartsWith in ArenaString: string memory has previously been freed");
+            }
+
+            var selfLength = Length;
+            if (selfLength < sourceLength) {
+                return false;
+            }
+
+            return IndexOf(source, 0, 1, sourceIndex, sourceLength, selfLength, false, false, contents) > -1;
+        }
+
+        public bool StartsWith(string source, int sourceIndex) {
+            return StartsWith(source, sourceIndex, source.Length - sourceIndex);
+        }
+
+        public bool StartsWith(string source) {
+            return StartsWith(source, 0, source.Length);
         }
         #endregion
 
