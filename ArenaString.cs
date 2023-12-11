@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Runtime.ConstrainedExecution;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -30,8 +29,6 @@ namespace Arenas {
 
             contents = arena.AllocCount<char>(capacity + 2);
         }
-
-        // TODO: Contains via IndexOf
 
         #region CopyFrom
         private char* InitCopy(out int capacity) {
@@ -412,9 +409,16 @@ namespace Arenas {
                 throw new ArgumentOutOfRangeException(nameof(length));
             }
 
-            var contents = Contents;
-            var end = index + length;
+            if (Arena is null) {
+                throw new InvalidOperationException("Cannot IndexOf in ArenaString: string has not been properly initialized with arena reference");
+            }
 
+            var contents = this.contents.Value;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot IndexOf in ArenaString: string memory has previously been freed");
+            }
+
+            var end = index + length;
             if (reverse) {
                 for (int i = end - 1; i >= index; i--) {
                     if (contents[i] == c) {
@@ -483,7 +487,15 @@ namespace Arenas {
                 return 0;
             }
 
-            var contents = Contents;
+            if (Arena is null) {
+                throw new InvalidOperationException("Cannot IndexOf in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = this.contents.Value;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot IndexOf in ArenaString: string memory has previously been freed");
+            }
+
             var end = searchIndex + searchLength;
             end -= sourceLength;
 
@@ -575,7 +587,15 @@ namespace Arenas {
                 return 0;
             }
 
-            var contents = Contents;
+            if (Arena is null) {
+                throw new InvalidOperationException("Cannot IndexOfAny in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = this.contents.Value;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot IndexOfAny in ArenaString: string memory has previously been freed");
+            }
+
             var end = index + length;
 
             if (reverse) {
@@ -632,9 +652,64 @@ namespace Arenas {
         #endregion
         #endregion
 
+        #region Contains
+        public bool Contains(char c) {
+            return IndexOf(c) >= 0;
+        }
+
+        public bool Contains(string str) {
+            return IndexOf(str) >= 0;
+        }
+        #endregion
+
+        #region CopyTo
+        public void CopyTo(int sourceIndex, char* destination, int count) {
+            var selfLength = Length;
+            if (destination == null) {
+                throw new ArgumentNullException(nameof(destination));
+            }
+            if (sourceIndex < 0 || sourceIndex > selfLength) {
+                throw new ArgumentOutOfRangeException(nameof(sourceIndex));
+            }
+            if (count < 0 || sourceIndex + count > selfLength) {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
+            if (count == 0) {
+                return;
+            }
+
+            if (Arena is null) {
+                throw new InvalidOperationException("Cannot CopyTo in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var src = contents.Value;
+            if (src == null) {
+                throw new InvalidOperationException("Cannot CopyTo in ArenaString: string memory has previously been freed");
+            }
+
+            while (count > 0) {
+                *(destination++) = *(src++);
+                count--;
+            }
+        }
+
+        public void CopyTo(int sourceIndex, char[] destination, int destinationIndex, int count) {
+            if (destination is null) {
+                throw new ArgumentNullException(nameof(destination));
+            }
+            if (destinationIndex < 0 || destinationIndex > destination.Length) {
+                throw new ArgumentOutOfRangeException(nameof(destinationIndex));
+            }
+            if (destinationIndex + count > destination.Length) {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
+            fixed (char* charPtr = destination) {
+                CopyTo(sourceIndex, charPtr, count);
+            }
+        }
+        #endregion
+
         // doable in place
-        // Contains
-        // CopyTo
         // EndsWith
         // Trim / TrimEnd / TrimStart
         // enumerator
@@ -703,5 +778,8 @@ namespace Arenas {
                 return capacity;
             }
         }
+
+        public bool IsAllocated { get { return contents.HasValue; } }
+        public Arena Arena { get { return contents.Arena; } }
     }
 }
