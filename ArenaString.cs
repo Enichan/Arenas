@@ -1298,10 +1298,6 @@ namespace Arenas {
             return s;
         }
 
-        [ThreadStatic]
-        private static List<int> _replaceList;
-        private static List<int> replaceList { get { return _replaceList ?? (_replaceList = new List<int>()); } }
-
         public ArenaString Replace(string oldString, string newString) {
             var arena = Arena;
             if (arena is null) {
@@ -1314,52 +1310,57 @@ namespace Arenas {
             }
 
             var selfLength = Length;
-            var replaceList = ArenaString.replaceList;
-            replaceList.Clear();
+            var replaceList = new ArenaList<int>(arena);
+            ArenaString tmpString = default;
 
-            int searchIndex = 0;
-            int resultIndex;
-            while (searchIndex <= selfLength && (resultIndex = IndexOf(oldString, searchIndex, selfLength - searchIndex, 0, oldString.Length, selfLength, false, checkArena: false, contents: contents)) > 0) {
-                replaceList.Add(resultIndex);
-                searchIndex = resultIndex + 1;
+            try {
+                int searchIndex = 0;
+                int resultIndex;
+                while (searchIndex <= selfLength && (resultIndex = IndexOf(oldString, searchIndex, selfLength - searchIndex, 0, oldString.Length, selfLength, false, checkArena: false, contents: contents)) > 0) {
+                    replaceList.Add(resultIndex);
+                    searchIndex = resultIndex + 1;
+                }
+
+                var sizeDifPerInstance = newString.Length - oldString.Length;
+                var sizeDif = sizeDifPerInstance * replaceList.Count;
+
+                var result = new ArenaString(arena, selfLength + sizeDif);
+                var sourceIndex = 0;
+                var resultContents = result.Contents;
+                var dest = resultContents;
+
+                // copy new string into ArenaString to make copying it into destination easier
+                tmpString = new ArenaString(arena, newString);
+                var newContents = tmpString.Contents;
+                var replaceLen = newString.Length;
+                var replaceLenBytes = replaceLen * sizeof(char);
+
+                foreach (var pos in replaceList) {
+                    var length = pos - sourceIndex;
+
+                    CharCopy(contents + sourceIndex, dest, length);
+                    sourceIndex += length;
+                    dest += length;
+
+                    CharCopy(newContents, dest, replaceLen);
+                    dest += replaceLen;
+
+                    sourceIndex += oldString.Length;
+                }
+
+                {
+                    var length = selfLength - sourceIndex;
+                    CharCopy(contents + sourceIndex, dest, length);
+                    dest += length;
+                }
+
+                result.Length = (int)(((ulong)dest - (ulong)resultContents) / sizeof(char));
+                return result;
             }
-
-            var sizeDifPerInstance = newString.Length - oldString.Length;
-            var sizeDif = sizeDifPerInstance * replaceList.Count;
-
-            var result = new ArenaString(arena, selfLength + sizeDif);
-            var sourceIndex = 0;
-            var resultContents = result.Contents;
-            var dest = resultContents;
-
-            // copy new string into ArenaString to make copying it into destination easier
-            var newArenaString = new ArenaString(arena, newString);
-            var newContents = newArenaString.Contents;
-            var replaceLen = newString.Length;
-            var replaceLenBytes = replaceLen * sizeof(char);
-
-            foreach (var pos in replaceList) {
-                var length = pos - sourceIndex;
-
-                CharCopy(contents + sourceIndex, dest, length);
-                sourceIndex += length;
-                dest += length;
-
-                CharCopy(newContents, dest, replaceLen);
-                dest += replaceLen;
-
-                sourceIndex += oldString.Length;
+            finally {
+                tmpString.Free();
+                replaceList.Free();
             }
-
-            {
-                var length = selfLength - sourceIndex;
-                CharCopy(contents + sourceIndex, dest, length);
-            }
-
-            newArenaString.Free();
-
-            result.Length = (int)(((ulong)dest - (ulong)resultContents) / sizeof(char));
-            return result;
         }
         #endregion
 
@@ -1522,9 +1523,13 @@ namespace Arenas {
             }
 
             var tmp = new ArenaString(arena, str);
-            var ret = Insert(index, new ArenaString(arena, str), arena);
-            tmp.Free();
-            return ret;
+            try {
+                var ret = Insert(index, tmp, arena);
+                return ret;
+            }
+            finally {
+                tmp.Free();
+            }
         }
         #endregion
 
