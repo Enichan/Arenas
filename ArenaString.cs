@@ -11,6 +11,7 @@ using System.Text;
 
 namespace Arenas {
     // TODO: to int and to double
+    // TODO: from int and from double
     public unsafe readonly struct ArenaString {
         private const int minCapacity = (16 - sizeof(int)) / sizeof(char);
         private const int contentsOffset = 2;
