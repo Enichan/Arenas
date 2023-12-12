@@ -1522,15 +1522,79 @@ namespace Arenas {
         }
         #endregion
 
+        #region PadLeft/PadRight
+        private ArenaString Pad(int count, char c, bool left, bool right) {
+            var arena = Arena;
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot Insert in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = Contents;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot Insert in ArenaString: string memory has previously been freed");
+            }
+
+            var selfLength = Length;
+
+            var s = new ArenaString(arena, selfLength + count);
+            var dest = s.Contents;
+            var extraLength = 0;
+
+            if (left) {
+                for (int i = 0; i < count; i++) {
+                    *(dest++) = c;
+                }
+                extraLength += count;
+            }
+
+            CharCopy(contents, dest, selfLength);
+            dest += selfLength;
+
+            if (right) {
+                for (int i = 0; i < count; i++) {
+                    *(dest++) = c;
+                }
+                extraLength += count;
+            }
+
+            s.Length = selfLength + extraLength;
+            return s;
+        }
+
+        public ArenaString Pad(int count, char c) {
+            return Pad(count, c, true, true);
+        }
+
+        public ArenaString Pad(int count) {
+            return Pad(count, ' ');
+        }
+
+        public ArenaString PadLeft(int count, char c) {
+            return Pad(count, c, true, false);
+        }
+
+        public ArenaString PadLeft(int count) {
+            return PadLeft(count, ' ');
+        }
+
+        public ArenaString PadRight(int count, char c) {
+            return Pad(count, c, false, true);
+        }
+
+        public ArenaString PadRight(int count) {
+            return PadRight(count, ' ');
+        }
+        #endregion
+
         // doable in place
         // enumerator
         // hashcode and equality
 
         // doable with reallocations
-        // Insert
-        // PadLeft / PadRight
         // Split
         // Substring
+        // + operator
+        // IFormattable?
 
         private static void CharCopy(char* source, char* dest, int length) {
             if (length > 0) {
