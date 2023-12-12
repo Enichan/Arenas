@@ -8,11 +8,12 @@ namespace Arenas {
         public delegate T CreateInstanceDelegate();
         public delegate bool ResetInstanceDelegate(T instance);
 
+        private int maxStoredInstances;
         private ConcurrentStack<T> freeList;
         protected CreateInstanceDelegate createInstance;
         protected ResetInstanceDelegate resetInstance;
 
-        public ManagedObjectPool(CreateInstanceDelegate createInstance, ResetInstanceDelegate resetInstance) 
+        public ManagedObjectPool(CreateInstanceDelegate createInstance, ResetInstanceDelegate resetInstance)
             : this() {
             this.createInstance = createInstance;
             this.resetInstance = resetInstance;
@@ -29,7 +30,7 @@ namespace Arenas {
         }
 
         public void Return(T instance) {
-            if (resetInstance(instance)) {
+            if (resetInstance(instance) && (maxStoredInstances == 0 || freeList.Count < MaxStoredInstances)) {
                 freeList.Push(instance);
             }
         }
@@ -44,6 +45,26 @@ namespace Arenas {
         public PooledAutoReturn<T> Borrow(out T instance) {
             instance = Get();
             return new PooledAutoReturn<T>(this, instance);
+        }
+
+        public int MaxStoredInstances {
+            get { return maxStoredInstances; }
+            set {
+                maxStoredInstances = Math.Max(0, value);
+
+                if (maxStoredInstances > 0) {
+                    var popCount = freeList.Count - maxStoredInstances;
+                    T val;
+
+                    // alas ConcurrentStack does not give us a way to pop N objects off the stack
+                    // without first allocating an array for them, so this is the best allocation
+                    // free method that can be used here
+                    while (popCount > 0) {
+                        freeList.TryPop(out val);
+                        popCount--;
+                    }
+                }
+            }
         }
     }
 
