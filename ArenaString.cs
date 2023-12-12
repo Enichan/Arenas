@@ -20,6 +20,10 @@ namespace Arenas {
 
         private readonly UnmanagedRef<char> contents;
 
+        private ArenaString(UnmanagedRef<char> contents) {
+            this.contents = contents;
+        }
+
         public ArenaString(Arena arena, string source) {
             if (arena is null) {
                 throw new ArgumentNullException(nameof(arena));
@@ -744,7 +748,6 @@ namespace Arenas {
         #endregion
 
         #region (Last)IndexOfAny
-        #region (Last)IndexOf char[]
         private int IndexOfAny(char[] chars, int index, int length, int selfLength, bool reverse) {
             if (chars is null) {
                 throw new ArgumentNullException(nameof(chars));
@@ -821,7 +824,6 @@ namespace Arenas {
             var selfLength = Length;
             return IndexOfAny(chars, 0, selfLength, selfLength, true);
         }
-        #endregion
         #endregion
 
         #region Contains
@@ -1518,7 +1520,11 @@ namespace Arenas {
             if (arena is null) {
                 throw new InvalidOperationException("Cannot Insert in ArenaString: string has not been properly initialized with arena reference");
             }
-            return Insert(index, new ArenaString(arena, str), arena);
+
+            var tmp = new ArenaString(arena, str);
+            var ret = Insert(index, new ArenaString(arena, str), arena);
+            tmp.Free();
+            return ret;
         }
         #endregion
 
@@ -1586,6 +1592,9 @@ namespace Arenas {
         }
         #endregion
 
+        #region Split
+        #endregion
+
         // doable in place
         // enumerator
         // hashcode and equality
@@ -1628,6 +1637,10 @@ namespace Arenas {
             return new string(contents, 0, Length);
         }
 
+        public static explicit operator ArenaString(UnmanagedRef<char> strData) {
+            return new ArenaString(strData);
+        }
+
         public char* Contents { 
             get {
                 var ptr = contents.Value;
@@ -1663,5 +1676,53 @@ namespace Arenas {
 
         public bool IsAllocated { get { return contents.HasValue; } }
         public Arena Arena { get { return contents.Arena; } }
+    }
+
+    public unsafe struct StringSplitResults : IDisposable {
+        private readonly UnmanagedRef<UnmanagedRef> tokens;
+        public readonly int Count;
+
+        public StringSplitResults(Arena arena, int count) {
+            if (arena is null) {
+                throw new ArgumentNullException(nameof(arena));
+            }
+            Count = count;
+            tokens = arena.AllocCount<UnmanagedRef>(count);
+        }
+
+        public void Free() {
+            var arena = tokens.Arena;
+            if (!(arena is null)) {
+                arena.Free(in tokens);
+            }
+        }
+
+        public void Dispose() {
+            Free();
+        }
+
+        public ArenaString this[int index] {
+            get {
+                if (index < 0 || index >= Count) {
+                    throw new ArgumentOutOfRangeException(nameof(index));
+                }
+
+                if (tokens.Arena is null) {
+                    throw new InvalidOperationException("Cannot access item in StringSplitResults: results instance has not been properly initialized with arena reference");
+                }
+
+                var items = tokens.Value;
+                if (items == null) {
+                    throw new InvalidOperationException("Cannot access item in StringSplitResults: results instance memory has previously been freed");
+                }
+
+                var ptr = (UnmanagedRef<char>)items[index];
+                if (ptr == null) {
+                    throw new InvalidOperationException("Cannot access item in StringSplitResults: item has previously been freed");
+                }
+
+                return (ArenaString)ptr;
+            }
+        }
     }
 }
