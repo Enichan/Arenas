@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -1009,11 +1010,95 @@ namespace Arenas {
         }
         #endregion
 
+        #region ToUpper(Invariant) / ToLower(Invariant)
+        private void ChangeCase(bool toUpper, CultureInfo culture, Arena arena = null, char* contents = null) {
+            if (arena == null) {
+                arena = Arena;
+                if (arena == null) {
+                    throw new InvalidOperationException("Cannot ToUpper/Lower in ArenaString: string has not been properly initialized with arena reference");
+                }
+            }
+
+            if (contents == null) {
+                contents = Contents;
+                if (contents == null) {
+                    throw new InvalidOperationException("Cannot ToUpper/Lower in ArenaString: string memory has previously been freed");
+                }
+            }
+
+            var end = contents + Length;
+            var cur = contents;
+
+            if (toUpper) {
+                while (cur < end) {
+                    *(cur++) = char.ToUpper(*cur, culture);
+                }
+            }
+            else {
+                while (cur < end) {
+                    *(cur++) = char.ToLower(*cur, culture);
+                }
+            }
+        }
+
+        public void ToLowerInPlace(CultureInfo culture) {
+            ChangeCase(false, culture);
+        }
+
+        public void ToLowerInvariantInPlace() {
+            ChangeCase(false, CultureInfo.InvariantCulture);
+        }
+
+        public void ToUpperInPlace(CultureInfo culture) {
+            ChangeCase(true, culture);
+        }
+
+        public void ToUpperInvariantInPlace() {
+            ChangeCase(true, CultureInfo.InvariantCulture);
+        }
+
+        private ArenaString ChangeCase(bool toUpper, CultureInfo culture, Arena arena) {
+            var s = new ArenaString(arena, contents.ElementCount - contentsOffset);
+            s.ChangeCase(toUpper, culture, arena);
+            return s;
+        }
+
+        public ArenaString ToLower(CultureInfo culture) {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot ToLower in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return ChangeCase(false, culture, arena);
+        }
+
+        public ArenaString ToLowerInvariant() {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot ToLowerInvariant in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return ChangeCase(false, CultureInfo.InvariantCulture, arena);
+        }
+
+        public ArenaString ToUpper(CultureInfo culture) {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot ToUpper in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return ChangeCase(false, culture, arena);
+        }
+
+        public ArenaString ToUpperInvariant() {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot ToUpperInvariant in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return ChangeCase(false, CultureInfo.InvariantCulture, arena);
+        }
+        #endregion
+
         // doable in place
         // enumerator
         // hashcode and equality
-        // ToLower(Invariant)
-        // ToUpper(Invariant)
         // Remove
         // Replace (char)
 
@@ -1036,7 +1121,7 @@ namespace Arenas {
             if (contents == null) {
                 return string.Empty;
             }
-            return new string(Contents, 0, Length);
+            return new string(contents, 0, Length);
         }
 
         public char* Contents { 
