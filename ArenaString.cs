@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -22,6 +23,9 @@ namespace Arenas {
             if (arena is null) {
                 throw new ArgumentNullException(nameof(arena));
             }
+            if (source is null) {
+                throw new ArgumentNullException(nameof(source));
+            }
 
             var capacity = source.Length;
             contents = arena.AllocCount<char>(capacity + contentsOffset);
@@ -37,6 +41,30 @@ namespace Arenas {
             }
 
             contents = arena.AllocCount<char>(capacity + contentsOffset);
+        }
+
+        public ArenaString(Arena arena, ArenaString source) {
+            if (arena is null) {
+                throw new ArgumentNullException(nameof(arena));
+            }
+
+            var sourceArena = source.Arena;
+            if (sourceArena is null) {
+                throw new InvalidOperationException("Cannot create new ArenaString from ArenaString: source string has not been properly initialized with arena reference");
+            }
+
+            var sourceContents = source.Contents;
+            if (sourceContents == null) {
+                throw new InvalidOperationException("Cannot create new ArenaString from ArenaString: source string memory has previously been freed");
+            }
+
+            var sourceLength = source.Length;
+            var capacity = sourceLength;
+            contents = arena.AllocCount<char>(capacity + contentsOffset);
+
+            if (!TryCopyFrom(source, 0, sourceLength, arena, null, capacity, sourceArena, sourceContents, sourceLength)) {
+                throw new InvalidOperationException("ArenaString copy failed unexpectedly");
+            }
         }
 
         #region CopyFrom
@@ -217,6 +245,16 @@ namespace Arenas {
         #endregion
 
         #region Copy from char*
+        private bool TryCopyFrom(char* charPtr, int length, int capacity, char* dest) {
+            if (length > capacity) {
+                return false;
+            }
+
+            Buffer.MemoryCopy(charPtr, dest, capacity * sizeof(char), length * sizeof(char));
+            Length = length;
+            return true;
+        }
+
         public bool TryCopyFrom(char* charPtr, int length) {
             if (length == 0) {
                 Length = 0;
@@ -231,14 +269,7 @@ namespace Arenas {
 
             int capacity;
             var dest = InitCopy(out capacity);
-
-            if (length > capacity) {
-                return false;
-            }
-
-            Buffer.MemoryCopy(charPtr, dest, capacity * sizeof(char), length * sizeof(char));
-            Length = length;
-            return true;
+            return TryCopyFrom(charPtr, length, capacity, dest);
         }
 
         public void CopyFrom(char* ptr, int length) {
@@ -250,6 +281,134 @@ namespace Arenas {
             }
             if (!TryCopyFrom(ptr, length)) {
                 throw new InvalidOperationException("Cannot CopyFrom char* in ArenaString: insufficient capacity");
+            }
+        }
+        #endregion
+
+        #region Copy from ArenaString
+        private bool TryCopyFrom(ArenaString source, int index, int length, Arena selfArena = null, char* selfContents = null, int selfCapacity = -1, Arena sourceArena = null, char* sourceContents = null, int sourceLength = -1) {
+            if (length == 0) {
+                Length = 0;
+                return true;
+            }
+
+            if (selfArena == null) {
+                selfArena = Arena;
+                if (selfArena == null) {
+                    throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: destination string has not been properly initialized with arena reference");
+                }
+            }
+
+            if (selfContents == null) {
+                selfContents = Contents;
+                if (selfContents == null) {
+                    throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: destination string memory has previously been freed");
+                }
+            }
+
+            if (selfCapacity < 0) {
+                selfCapacity = Capacity;
+            }
+
+            if (sourceArena == null) {
+                sourceArena = source.Arena;
+                if (sourceArena == null) {
+                    throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: source string has not been properly initialized with arena reference");
+                }
+            }
+
+            if (sourceContents == null) {
+                sourceContents = source.Contents;
+                if (sourceContents == null) {
+                    throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: source string memory has previously been freed");
+                }
+            }
+
+            if (sourceLength < 0) {
+                sourceLength = source.Length;
+            }
+
+            if (length < 0) {
+                throw new ArgumentOutOfRangeException(nameof(length));
+            }
+            if (index < 0 || index + length > sourceLength) {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
+            return TryCopyFrom(sourceContents + index, length, selfCapacity, selfContents);
+        }
+
+        public bool TryCopyFrom(ArenaString source, int index, int length) {
+            return TryCopyFrom(source, index, length);
+        }
+
+        public bool TryCopyFrom(ArenaString source, int index) {
+            var sourceArena = source.Arena;
+            if (sourceArena == null) {
+                throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: source string has not been properly initialized with arena reference");
+            }
+
+            var sourceContents = source.Contents;
+            if (sourceContents == null) {
+                throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: source string memory has previously been freed");
+            }
+
+            var sourceLength = source.Length;
+            return TryCopyFrom(source, index, sourceLength - index, sourceArena: sourceArena, sourceContents: sourceContents, sourceLength: sourceLength);
+        }
+
+        public bool TryCopyFrom(ArenaString source) {
+            var sourceArena = source.Arena;
+            if (sourceArena == null) {
+                throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: source string has not been properly initialized with arena reference");
+            }
+
+            var sourceContents = source.Contents;
+            if (sourceContents == null) {
+                throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: source string memory has previously been freed");
+            }
+
+            var sourceLength = source.Length;
+            return TryCopyFrom(source, 0, sourceLength, sourceArena: sourceArena, sourceContents: sourceContents, sourceLength: sourceLength);
+        }
+
+        public void CopyFrom(ArenaString source, int index, int length) {
+            if (!TryCopyFrom(source, index, length)) {
+                throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: insufficient capacity");
+            }
+        }
+
+        public void CopyFrom(ArenaString source, int index) {
+            var sourceArena = source.Arena;
+            if (sourceArena == null) {
+                throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: source string has not been properly initialized with arena reference");
+            }
+
+            var sourceContents = source.Contents;
+            if (sourceContents == null) {
+                throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: source string memory has previously been freed");
+            }
+
+            var sourceLength = source.Length;
+            if (!TryCopyFrom(source, index, sourceLength - index, sourceArena: sourceArena, sourceContents: sourceContents, sourceLength: sourceLength)) {
+                throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: insufficient capacity");
+            }
+        }
+
+        public void CopyFrom(ArenaString source) {
+            var sourceArena = source.Arena;
+            if (sourceArena == null) {
+                throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: source string has not been properly initialized with arena reference");
+            }
+
+            var sourceContents = source.Contents;
+            if (sourceContents == null) {
+                throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: source string memory has previously been freed");
+            }
+
+            var sourceLength = source.Length;
+            if (!TryCopyFrom(source, 0, sourceLength, sourceArena: sourceArena, sourceContents: sourceContents, sourceLength: sourceLength)) {
+                throw new InvalidOperationException("Cannot CopyFrom ArenaString in ArenaString: insufficient capacity");
             }
         }
         #endregion
@@ -516,7 +675,7 @@ namespace Arenas {
             if (reverse) {
                 for (int i = end - 1; i >= searchIndex; i--) {
                     var cmpi = i;
-                    for (int j = sourceIndex; i < sourceEnd; i++, cmpi++) {
+                    for (int j = sourceIndex; j < sourceEnd; j++, cmpi++) {
                         if (contents[cmpi] != source[j]) {
                             cmpi = -1;
                             break;
@@ -530,7 +689,7 @@ namespace Arenas {
             else {
                 for (int i = searchIndex; i < end; i++) {
                     var cmpi = i;
-                    for (int j = sourceIndex; i < sourceEnd; i++, cmpi++) {
+                    for (int j = sourceIndex; j < sourceEnd; j++, cmpi++) {
                         if (contents[cmpi] != source[j]) {
                             cmpi = -1;
                             break;
@@ -699,10 +858,9 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot CopyTo in ArenaString: string memory has previously been freed");
             }
 
-            while (count > 0) {
-                *(destination++) = *(src++);
-                count--;
-            }
+            src += sourceIndex;
+            var bytes = count * sizeof(char);
+            Buffer.MemoryCopy(src, destination, bytes, bytes);
         }
 
         public void CopyTo(int sourceIndex, char[] destination, int destinationIndex, int count) {
@@ -862,9 +1020,8 @@ namespace Arenas {
             else {
                 var newLength = end - start;
                 var source = contents + start;
-                for (int i = 0; i < newLength; i++) {
-                    contents[i] = *(source++);
-                }
+                var capacity = Capacity;
+                Buffer.MemoryCopy(source, contents, capacity * sizeof(char), (capacity - start) * sizeof(char));
                 Length = newLength;
             }
         }
@@ -906,7 +1063,7 @@ namespace Arenas {
         }
 
         private ArenaString TrimCopy<T>(in T trimProvider, bool trimStart, bool trimEnd, Arena arena) where T : struct, IIsTrimChar {
-            var s = new ArenaString(arena, contents.ElementCount - contentsOffset);
+            var s = new ArenaString(arena, this);
             s.Trim(trimProvider, trimStart, trimEnd, arena);
             return s;
         }
@@ -1058,7 +1215,7 @@ namespace Arenas {
         }
 
         private ArenaString ChangeCase(bool toUpper, CultureInfo culture, Arena arena) {
-            var s = new ArenaString(arena, contents.ElementCount - contentsOffset);
+            var s = new ArenaString(arena, this);
             s.ChangeCase(toUpper, culture, arena);
             return s;
         }
@@ -1096,16 +1253,242 @@ namespace Arenas {
         }
         #endregion
 
+        #region Replace
+        private void Replace(char oldChar, char newChar, Arena arena = null, char* contents = null) {
+            if (arena == null) {
+                arena = Arena;
+                if (arena == null) {
+                    throw new InvalidOperationException("Cannot Replace in ArenaString: string has not been properly initialized with arena reference");
+                }
+            }
+
+            if (contents == null) {
+                contents = Contents;
+                if (contents == null) {
+                    throw new InvalidOperationException("Cannot Replace in ArenaString: string memory has previously been freed");
+                }
+            }
+
+            var end = contents + Length;
+            var cur = contents;
+
+            while (cur < end) {
+                if (*cur == oldChar) {
+                    *cur = newChar;
+                }
+                cur++;
+            }
+        }
+
+        public void ReplaceInPlace(char oldChar, char newChar) {
+            Replace(oldChar, newChar);
+        }
+
+        public ArenaString Replace(char oldChar, char newChar) {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot Replace in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var s = new ArenaString(arena, this);
+            s.Replace(oldChar, newChar, arena);
+            return s;
+        }
+
+        [ThreadStatic]
+        private static List<int> _replaceList;
+        private static List<int> replaceList { get { return _replaceList ?? (_replaceList = new List<int>()); } }
+
+        public ArenaString Replace(string oldString, string newString) {
+            var arena = Arena;
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot Replace in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = Contents;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot Replace in ArenaString: string memory has previously been freed");
+            }
+
+            var selfLength = Length;
+            var replaceList = ArenaString.replaceList;
+            replaceList.Clear();
+
+            int searchIndex = 0;
+            int resultIndex;
+            while (searchIndex <= selfLength && (resultIndex = IndexOf(oldString, searchIndex, selfLength - searchIndex, 0, oldString.Length, selfLength, false, checkArena: false, contents: contents)) > 0) {
+                replaceList.Add(resultIndex);
+                searchIndex = resultIndex + 1;
+            }
+
+            var sizeDifPerInstance = newString.Length - oldString.Length;
+            var sizeDif = sizeDifPerInstance * replaceList.Count;
+
+            var result = new ArenaString(arena, selfLength + sizeDif);
+            var sourceIndex = 0;
+            var resultContents = result.Contents;
+            var dest = resultContents;
+
+            // copy new string into ArenaString to make copying it into destination easier
+            var newArenaString = new ArenaString(arena, newString);
+            var newContents = newArenaString.Contents;
+            var replaceLen = newString.Length;
+            var replaceLenBytes = replaceLen * sizeof(char);
+
+            foreach (var pos in replaceList) {
+                var length = pos - sourceIndex;
+                if (length > 0) {
+                    if (length > 64) {
+                        var lengthBytes = length * sizeof(char);
+                        Buffer.MemoryCopy(contents + sourceIndex, dest, lengthBytes, lengthBytes);
+                        dest += length;
+                    }
+                    else {
+                        int count = length;
+                        while (count > 0) {
+                            *(dest++) = contents[sourceIndex++];
+                            count--;
+                        }
+                    }
+                }
+
+                if (replaceLen > 64) {
+                    Buffer.MemoryCopy(newContents, dest, replaceLenBytes, replaceLenBytes);
+                    dest += replaceLen;
+                }
+                else {
+                    for (int i = 0; i < replaceLen; i++) {
+                        *(dest++) = newContents[i];
+                    }
+                }
+
+                sourceIndex += oldString.Length;
+            }
+
+            {
+                var length = selfLength - sourceIndex;
+                if (length > 0) {
+                    if (length > 64) {
+                        var lengthBytes = length * sizeof(char);
+                        Buffer.MemoryCopy(contents + sourceIndex, dest, lengthBytes, lengthBytes);
+                        dest += length;
+                    }
+                    else {
+                        int count = length;
+                        while (count > 0) {
+                            *(dest++) = contents[sourceIndex++];
+                            count--;
+                        }
+                    }
+                }
+            }
+
+            newArenaString.Free();
+
+            result.Length = (int)(((ulong)dest - (ulong)resultContents) / sizeof(char));
+            return result;
+        }
+        #endregion
+
+        #region Remove
+        private void Remove(int index, int count, Arena arena = null, char* contents = null, int selfLength = -1) {
+            if (arena == null) {
+                arena = Arena;
+                if (arena == null) {
+                    throw new InvalidOperationException("Cannot Remove in ArenaString: string has not been properly initialized with arena reference");
+                }
+            }
+
+            if (contents == null) {
+                contents = Contents;
+                if (contents == null) {
+                    throw new InvalidOperationException("Cannot Remove in ArenaString: string memory has previously been freed");
+                }
+            }
+
+            if (selfLength < 0) {
+                selfLength = Length;
+            }
+
+            if (index < 0 || index > selfLength) {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+            if (count < 0 || index + count > selfLength) {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
+
+            if (count == 0) {
+                return;
+            }
+            if (index == 0 && count == selfLength) {
+                return;
+            }
+
+            if (index + count == selfLength) {
+                Length = selfLength - count;
+                return;
+            }
+
+            var capacity = Capacity;
+            Buffer.MemoryCopy(contents + index + count, contents + index, (capacity - index) * sizeof(char), (capacity - index - count) * sizeof(char));
+        }
+
+        public void RemoveInPlace(int index, int count) {
+            Remove(index, count);
+        }
+
+        public void RemoveInPlace(int index) {
+            var arena = Arena;
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot RemoveInPlace in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = Contents;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot RemoveInPlace in ArenaString: string memory has previously been freed");
+            }
+
+            var selfLength = Length;
+            Remove(index, selfLength - index, arena, contents, selfLength);
+        }
+
+        public ArenaString Remove(int index, int count) {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot Remove in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var s = new ArenaString(arena, this);
+            s.Remove(index, count, arena);
+            return s;
+        }
+
+        public ArenaString Remove(int index) {
+            var arena = Arena;
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot RemoveInPlace in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = Contents;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot RemoveInPlace in ArenaString: string memory has previously been freed");
+            }
+
+            var selfLength = Length;
+
+            var s = new ArenaString(arena, this);
+            s.Remove(index, selfLength - index, arena, contents, selfLength);
+            return s;
+        }
+        #endregion
+
         // doable in place
         // enumerator
         // hashcode and equality
-        // Remove
-        // Replace (char)
 
         // doable with reallocations
         // Insert
         // PadLeft / PadRight
-        // Replace (string)
         // Split
         // Substring
 
