@@ -8,9 +8,9 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
-using static Arenas.UnmanagedListTypes;
 
 namespace Arenas {
+    // TODO: to int and to double
     public unsafe readonly struct ArenaString {
         private const int minCapacity = (16 - sizeof(int)) / sizeof(char);
         private const int contentsOffset = 2;

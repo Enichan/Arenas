@@ -13,6 +13,15 @@ namespace ArenasTest {
             UnmanagedRef<Person> staleRefTest;
 
             using (var arena = new Arena()) {
+                var buffer = new string(' ', 64);
+                fixed (char* bs = buffer) {
+                    bs[0] = '3';
+                    bs[1] = '.';
+                    bs[2] = '1';
+                    bs[3] = '4';
+                }
+                Console.WriteLine(double.Parse(buffer));
+                
                 var s = new ArenaString(arena, "Hello world!");
                 Console.WriteLine(s);
 
