@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -7,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using static Arenas.UnmanagedListTypes;
 
 namespace Arenas {
     public unsafe readonly struct ArenaString {
@@ -673,7 +675,7 @@ namespace Arenas {
             }
 
             var end = searchIndex + searchLength;
-            end -= sourceLength;
+            end -= sourceLength - 1;
 
             var sourceEnd = sourceIndex + sourceLength;
 
@@ -1598,6 +1600,105 @@ namespace Arenas {
         #endregion
 
         #region Split
+        public StringSplitResults Split(string[] separators, int count, StringSplitOptions options) {
+            var arena = Arena;
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot Split in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = Contents;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot Split in ArenaString: string memory has previously been freed");
+            }
+
+            if (count < 0) {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
+
+            if (count == 0) {
+                return new StringSplitResults(arena, 0);
+            }
+
+            var selfLength = Length;
+            var splitSpans = new ArenaList<SplitSpan>(arena);
+
+            try {
+                var index = 0;
+                var fromIndex = index;
+
+                while (index < selfLength) {
+                    var split = false;
+
+                    for (int i = 0; i < separators.Length; i++) {
+                        var sep = separators[i];
+
+                        if (sep == null || sep.Length == 0) { continue; }
+                        if (index + sep.Length > selfLength) { continue; }
+
+                        if (IndexOf(sep, index, sep.Length, 0, sep.Length, selfLength, false, false, contents) > -1) {
+                            var span = new SplitSpan(fromIndex, index - fromIndex);
+                            index += sep.Length;
+                            fromIndex = index;
+                            split = true;
+
+                            if (span.Count > 0 || options != StringSplitOptions.RemoveEmptyEntries) {
+                                splitSpans.Add(span);
+                            }
+                            break;
+                        }
+                    }
+
+                    if (splitSpans.Count >= count - 1) {
+                        if (options == StringSplitOptions.None || !split) {
+                            break;
+                        }
+                    }
+
+                    if (!split) {
+                        index++;
+                    }
+                }
+
+                {
+                    var span = new SplitSpan(fromIndex, selfLength - fromIndex);
+                    if (span.Count > 0 || options != StringSplitOptions.RemoveEmptyEntries) {
+                        splitSpans.Add(span);
+                    }
+                }
+
+                var results = new StringSplitResults(arena, splitSpans.Count);
+                for (int i = 0; i < splitSpans.Count; i++) {
+                    var span = splitSpans[i];
+                    if (span.Count == 0 && options == StringSplitOptions.RemoveEmptyEntries) { continue; }
+
+                    var s = new ArenaString(arena, span.Count);
+                    CharCopy(contents + span.Start, s.Contents, span.Count);
+                    s.Length = span.Count;
+
+                    results[i] = s;
+                }
+
+                return results;
+            }
+            finally {
+                splitSpans.Free();
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private readonly struct SplitSpan {
+            public readonly int Start;
+            public readonly int Count;
+
+            public SplitSpan(int start, int count) {
+                Start = start;
+                Count = count;
+            }
+
+            public override string ToString() {
+                return $"{Start}-{Start + Count}";
+            }
+        }
         #endregion
 
         // doable in place
@@ -1625,6 +1726,10 @@ namespace Arenas {
                     }
                 }
             }
+        }
+
+        public UnmanagedRef<char> GetUnderlyingReference() {
+            return contents;
         }
 
         public void Free() {
@@ -1683,7 +1788,8 @@ namespace Arenas {
         public Arena Arena { get { return contents.Arena; } }
     }
 
-    public unsafe struct StringSplitResults : IDisposable {
+    [DebuggerTypeProxy(typeof(StringSplitResultsDebugView))]
+    public unsafe readonly struct StringSplitResults : IDisposable, IEnumerable<ArenaString> {
         private readonly UnmanagedRef<UnmanagedRef> tokens;
         public readonly int Count;
 
@@ -1691,11 +1797,22 @@ namespace Arenas {
             if (arena is null) {
                 throw new ArgumentNullException(nameof(arena));
             }
+            if (count < 0) {
+                throw new ArgumentOutOfRangeException(nameof(count));
+            }
+
             Count = count;
-            tokens = arena.AllocCount<UnmanagedRef>(count);
+            if (Count > 0) {
+                tokens = arena.AllocCount<UnmanagedRef>(count);
+            }
+            else {
+                tokens = default;
+            }
         }
 
         public void Free() {
+            if (Count == 0) { return; }
+
             var arena = tokens.Arena;
             if (!(arena is null)) {
                 arena.Free(in tokens);
@@ -1706,6 +1823,18 @@ namespace Arenas {
             Free();
         }
 
+        public Enumerator GetEnumerator() {
+            return new Enumerator(this);
+        }
+
+        IEnumerator<ArenaString> IEnumerable<ArenaString>.GetEnumerator() {
+            return GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() {
+            return GetEnumerator();
+        }
+
         public ArenaString this[int index] {
             get {
                 if (index < 0 || index >= Count) {
@@ -1713,21 +1842,129 @@ namespace Arenas {
                 }
 
                 if (tokens.Arena is null) {
-                    throw new InvalidOperationException("Cannot access item in StringSplitResults: results instance has not been properly initialized with arena reference");
+                    throw new InvalidOperationException("Cannot get item in StringSplitResults: results instance has not been properly initialized with arena reference");
                 }
 
                 var items = tokens.Value;
                 if (items == null) {
-                    throw new InvalidOperationException("Cannot access item in StringSplitResults: results instance memory has previously been freed");
+                    throw new InvalidOperationException("Cannot get item in StringSplitResults: results instance memory has previously been freed");
                 }
 
                 var ptr = (UnmanagedRef<char>)items[index];
                 if (ptr == null) {
-                    throw new InvalidOperationException("Cannot access item in StringSplitResults: item has previously been freed");
+                    throw new InvalidOperationException("Cannot get item in StringSplitResults: item has previously been freed");
                 }
 
                 return (ArenaString)ptr;
             }
+            set {
+                if (index < 0 || index >= Count) {
+                    throw new ArgumentOutOfRangeException(nameof(index));
+                }
+
+                if (tokens.Arena is null) {
+                    throw new InvalidOperationException("Cannot set item in StringSplitResults: results instance has not been properly initialized with arena reference");
+                }
+
+                var items = tokens.Value;
+                if (items == null) {
+                    throw new InvalidOperationException("Cannot set item in StringSplitResults: results instance memory has previously been freed");
+                }
+
+                items[index] = (UnmanagedRef)value.GetUnderlyingReference();
+            }
         }
+
+        [Serializable]
+        public struct Enumerator : IEnumerator<ArenaString>, System.Collections.IEnumerator {
+            private StringSplitResults results;
+            private int index;
+            private int count;
+            private ArenaString current;
+
+            internal Enumerator(StringSplitResults results) {
+                this.results = results;
+                index = 0;
+                count = results.Count;
+                current = default;
+            }
+
+            public void Dispose() {
+            }
+
+            public bool MoveNext() {
+                if (count == 0) { return MoveNextRare(); }
+
+                var tokensPtr = results.tokens.Value;
+
+                if (tokensPtr != null && ((uint)index < (uint)count)) {
+                    current = results[index];
+                    index++;
+                    return true;
+                }
+
+                return MoveNextRare();
+            }
+
+            private bool MoveNextRare() {
+                if (count > 0) {
+                    var tokensPtr = results.tokens.Value;
+                    if (tokensPtr == null) {
+                        throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                    }
+                }
+
+                index = count + 1;
+                current = default;
+                return false;
+            }
+
+            public ArenaString Current {
+                get {
+                    return current;
+                }
+            }
+
+            object IEnumerator.Current {
+                get {
+                    if (index == 0 || index == count + 1) {
+                        throw new InvalidOperationException("Enumeration has either not started or has already finished.");
+                    }
+                    return Current;
+                }
+            }
+
+            void IEnumerator.Reset() {
+                if (count > 0) {
+                    var tokensPtr = results.tokens.Value;
+                    if (tokensPtr == null) {
+                        throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                    }
+                }
+
+                index = 0;
+                current = default;
+            }
+        }
+    }
+
+    internal unsafe readonly struct StringSplitResultsDebugView {
+        private readonly StringSplitResults results;
+
+        public StringSplitResultsDebugView(StringSplitResults results) {
+            this.results = results;
+        }
+
+        public ArenaString[] Items {
+            get {
+                var items = new ArenaString[results.Count];
+                for (int i = 0; i < results.Count; i++) {
+                    items[i] = results[i];
+                }
+                return items;
+            }
+        }
+
+        public int Count { get { return results.Count; } }
     }
 }

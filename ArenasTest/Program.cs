@@ -16,6 +16,16 @@ namespace ArenasTest {
                 var s = new ArenaString(arena, "Hello world!");
                 Console.WriteLine(s);
 
+                var t1 = "a..b.".Split(new string[] { "." }, 3, StringSplitOptions.None);
+                var t2 = new ArenaString(arena, "a..b.").Split(new string[] { "." }, 3, StringSplitOptions.None);
+
+                Console.WriteLine(new ArenaString(arena, "13").IndexOf("13", 0, 2));
+
+                var tokens = s.Split(new string[] { "ello", "lo", "rl", "!" }, int.MaxValue, StringSplitOptions.None);
+                foreach (var token in tokens) {
+                    Console.WriteLine(token);
+                }
+
                 // allocate some people in the arena
                 var john = arena.Allocate(new Person());
                 john.Value->FirstName = "John";
