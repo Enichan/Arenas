@@ -1894,7 +1894,13 @@ namespace Arenas {
         // doable with reallocations
         // + operator
         // IFormattable?
-        // static methods -_-
+        
+        // static methods
+        // Join
+        // Compare(Ordinal)
+        // Concat
+        // IsNullOrEmpty
+        // IsNullOrWhiteSpace
 
         private static void CharCopy(char* source, char* dest, int length) {
             if (length > 0) {
