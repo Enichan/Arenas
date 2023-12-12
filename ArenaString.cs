@@ -804,14 +804,14 @@ namespace Arenas {
         }
         #endregion
 
+        #region Trim(End/Start)
+
+        #endregion
+
         // doable in place
-        // EndsWith
         // Trim / TrimEnd / TrimStart
         // enumerator
         // hashcode and equality
-        // IndexOf / IndexOfAny
-        // LastIndexOf / LastIndexOfAny
-        // StartsWith
         // ToLower(Invariant)
         // ToUpper(Invariant)
         // Remove
