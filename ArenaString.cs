@@ -1,11 +1,16 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Arenas {
     public unsafe readonly struct ArenaString {
+        private const int minCapacity = (16 - sizeof(int)) / sizeof(char);
+        private const int contentsOffset = 2;
+        private const int contentsOffsetBytes = 2 * sizeof(char);
+
         static ArenaString() {
             Debug.Assert(sizeof(int) == sizeof(char) * 2);
         }
@@ -18,7 +23,7 @@ namespace Arenas {
             }
 
             var capacity = source.Length;
-            contents = arena.AllocCount<char>(capacity + 2);
+            contents = arena.AllocCount<char>(capacity + contentsOffset);
             CopyFrom(source);
         }
 
@@ -26,8 +31,11 @@ namespace Arenas {
             if (arena is null) {
                 throw new ArgumentNullException(nameof(arena));
             }
+            if (capacity < minCapacity) {
+                capacity = minCapacity;
+            }
 
-            contents = arena.AllocCount<char>(capacity + 2);
+            contents = arena.AllocCount<char>(capacity + contentsOffset);
         }
 
         #region CopyFrom
@@ -42,8 +50,8 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot CopyFrom in ArenaString: string memory has previously been freed");
             }
 
-            capacity = contents.ElementCount - 2;
-            return ptr;
+            capacity = contents.ElementCount - contentsOffset;
+            return ptr + contentsOffset;
         }
 
         #region Copy from string
@@ -414,7 +422,7 @@ namespace Arenas {
             }
 
             if (contents == null) {
-                contents = this.contents.Value;
+                contents = Contents;
                 if (contents == null) {
                     throw new InvalidOperationException("Cannot IndexOf in ArenaString: string memory has previously been freed");
                 }
@@ -493,7 +501,7 @@ namespace Arenas {
             }
 
             if (contents == null) {
-                contents = this.contents.Value;
+                contents = Contents;
                 if (contents == null) {
                     throw new InvalidOperationException("Cannot IndexOf in ArenaString: string memory has previously been freed");
                 }
@@ -594,7 +602,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot IndexOfAny in ArenaString: string has not been properly initialized with arena reference");
             }
 
-            var contents = this.contents.Value;
+            var contents = Contents;
             if (contents == null) {
                 throw new InvalidOperationException("Cannot IndexOfAny in ArenaString: string memory has previously been freed");
             }
@@ -685,7 +693,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot CopyTo in ArenaString: string has not been properly initialized with arena reference");
             }
 
-            var src = contents.Value;
+            var src = Contents;
             if (src == null) {
                 throw new InvalidOperationException("Cannot CopyTo in ArenaString: string memory has previously been freed");
             }
@@ -718,7 +726,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot EndsWith in ArenaString: string has not been properly initialized with arena reference");
             }
 
-            var contents = this.contents.Value;
+            var contents = Contents;
             if (contents == null) {
                 throw new InvalidOperationException("Cannot EndsWith in ArenaString: string memory has previously been freed");
             }
@@ -736,7 +744,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot EndsWith in ArenaString: string has not been properly initialized with arena reference");
             }
 
-            var contents = this.contents.Value;
+            var contents = Contents;
             if (contents == null) {
                 throw new InvalidOperationException("Cannot EndsWith in ArenaString: string memory has previously been freed");
             }
@@ -764,7 +772,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot StartsWith in ArenaString: string has not been properly initialized with arena reference");
             }
 
-            var contents = this.contents.Value;
+            var contents = Contents;
             if (contents == null) {
                 throw new InvalidOperationException("Cannot StartsWith in ArenaString: string memory has previously been freed");
             }
@@ -782,7 +790,7 @@ namespace Arenas {
                 throw new InvalidOperationException("Cannot StartsWith in ArenaString: string has not been properly initialized with arena reference");
             }
 
-            var contents = this.contents.Value;
+            var contents = Contents;
             if (contents == null) {
                 throw new InvalidOperationException("Cannot StartsWith in ArenaString: string memory has previously been freed");
             }
@@ -805,11 +813,203 @@ namespace Arenas {
         #endregion
 
         #region Trim(End/Start)
+        private void Trim<T>(in T trimProvider, bool trimStart, bool trimEnd, Arena arena = null, char* contents = null) where T : struct, IIsTrimChar {
+            if (arena == null) {
+                arena = Arena;
+                if (arena == null) {
+                    throw new InvalidOperationException("Cannot Trim in ArenaString: string has not been properly initialized with arena reference");
+                }
+            }
 
+            if (contents == null) {
+                contents = Contents;
+                if (contents == null) {
+                    throw new InvalidOperationException("Cannot Trim in ArenaString: string memory has previously been freed");
+                }
+            }
+
+            var selfLength = Length;
+            var start = 0;
+            var end = selfLength - 1;
+
+            if (trimStart) {
+                while (start < selfLength && trimProvider.Trim(contents[start])) {
+                    start++;
+                }
+
+                if (start >= selfLength) {
+                    Length = 0;
+                    return;
+                }
+            }
+
+            if (trimEnd) {
+                while (trimProvider.Trim(contents[end])) {
+                    end--;
+                }
+                end++;
+
+                if (end == 0) {
+                    Length = 0;
+                    return;
+                }
+            }
+
+            if (start == 0) {
+                Length = end;
+            }
+            else {
+                var newLength = end - start;
+                var source = contents + start;
+                for (int i = 0; i < newLength; i++) {
+                    contents[i] = *(source++);
+                }
+                Length = newLength;
+            }
+        }
+
+        public void TrimInPlace() {
+            Trim(new TrimIsWhiteSpace(), true, true);
+        }
+
+        public void TrimInPlace(char[] chars) {
+            Trim(new TrimIsCharArray(chars), true, true);
+        }
+
+        public void TrimInPlace(char chr) {
+            Trim(new TrimIsChar(chr), true, true);
+        }
+
+        public void TrimStartInPlace() {
+            Trim(new TrimIsWhiteSpace(), true, false);
+        }
+
+        public void TrimStartInPlace(char[] chars) {
+            Trim(new TrimIsCharArray(chars), true, false);
+        }
+
+        public void TrimStartInPlace(char chr) {
+            Trim(new TrimIsChar(chr), true, false);
+        }
+
+        public void TrimEndInPlace() {
+            Trim(new TrimIsWhiteSpace(), false, true);
+        }
+
+        public void TrimEndInPlace(char[] chars) {
+            Trim(new TrimIsCharArray(chars), false, true);
+        }
+
+        public void TrimEndInPlace(char chr) {
+            Trim(new TrimIsChar(chr), false, true);
+        }
+
+        private ArenaString TrimCopy<T>(in T trimProvider, bool trimStart, bool trimEnd, Arena arena) where T : struct, IIsTrimChar {
+            var s = new ArenaString(arena, contents.ElementCount - contentsOffset);
+            s.Trim(trimProvider, trimStart, trimEnd, arena);
+            return s;
+        }
+
+        public ArenaString Trim() {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot Trim in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return TrimCopy(new TrimIsWhiteSpace(), true, true, arena);
+        }
+
+        public ArenaString Trim(char[] chars) {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot Trim in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return TrimCopy(new TrimIsCharArray(chars), true, true, arena);
+        }
+
+        public ArenaString Trim(char chr) {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot Trim in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return TrimCopy(new TrimIsChar(chr), true, true, arena);
+        }
+
+        public ArenaString TrimStart() {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot Trim in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return TrimCopy(new TrimIsWhiteSpace(), true, false, arena);
+        }
+
+        public ArenaString TrimStart(char[] chars) {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot Trim in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return TrimCopy(new TrimIsCharArray(chars), true, false, arena);
+        }
+
+        public ArenaString TrimStart(char chr) {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot Trim in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return TrimCopy(new TrimIsChar(chr), true, false, arena);
+        }
+
+        public ArenaString TrimEnd() {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot Trim in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return TrimCopy(new TrimIsWhiteSpace(), false, true, arena);
+        }
+
+        public ArenaString TrimEnd(char[] chars) {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot Trim in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return TrimCopy(new TrimIsCharArray(chars), false, true, arena);
+        }
+
+        public ArenaString TrimEnd(char chr) {
+            var arena = Arena;
+            if (arena == null) {
+                throw new InvalidOperationException("Cannot Trim in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return TrimCopy(new TrimIsChar(chr), false, true, arena);
+        }
+
+        private interface IIsTrimChar { bool Trim(char c); }
+
+        private readonly struct TrimIsWhiteSpace : IIsTrimChar {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool Trim(char c) { return char.IsWhiteSpace(c); }
+        }
+        private readonly struct TrimIsChar : IIsTrimChar {
+            private readonly char chr;
+            public TrimIsChar(char chr) { this.chr = chr; }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool Trim(char c) { return c == chr; }
+        }
+        private readonly struct TrimIsCharArray : IIsTrimChar {
+            private readonly char[] chars;
+            public TrimIsCharArray(char[] chars) { this.chars = chars; }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public bool Trim(char c) {
+                for (int i = 0; i < chars.Length; i++) {
+                    if (chars[i] == c) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
         #endregion
 
         // doable in place
-        // Trim / TrimEnd / TrimStart
         // enumerator
         // hashcode and equality
         // ToLower(Invariant)
@@ -845,7 +1045,7 @@ namespace Arenas {
                 if (ptr == null) {
                     return null;
                 }
-                return ptr + 2; 
+                return ptr + contentsOffset; 
             } 
         }
 
@@ -868,9 +1068,7 @@ namespace Arenas {
 
         public int Capacity {
             get {
-                int capacity;
-                InitCopy(out capacity);
-                return capacity;
+                return contents.ElementCount;
             }
         }
 
