@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Arenas {
@@ -1337,50 +1338,20 @@ namespace Arenas {
 
             foreach (var pos in replaceList) {
                 var length = pos - sourceIndex;
-                if (length > 0) {
-                    if (length > 64) {
-                        var lengthBytes = length * sizeof(char);
-                        Buffer.MemoryCopy(contents + sourceIndex, dest, lengthBytes, lengthBytes);
-                        dest += length;
-                    }
-                    else {
-                        int count = length;
-                        while (count > 0) {
-                            *(dest++) = contents[sourceIndex++];
-                            count--;
-                        }
-                    }
-                }
 
-                if (replaceLen > 64) {
-                    Buffer.MemoryCopy(newContents, dest, replaceLenBytes, replaceLenBytes);
-                    dest += replaceLen;
-                }
-                else {
-                    for (int i = 0; i < replaceLen; i++) {
-                        *(dest++) = newContents[i];
-                    }
-                }
+                CharCopy(contents + sourceIndex, dest, length);
+                sourceIndex += length;
+                dest += length;
+
+                CharCopy(newContents, dest, replaceLen);
+                dest += replaceLen;
 
                 sourceIndex += oldString.Length;
             }
 
             {
                 var length = selfLength - sourceIndex;
-                if (length > 0) {
-                    if (length > 64) {
-                        var lengthBytes = length * sizeof(char);
-                        Buffer.MemoryCopy(contents + sourceIndex, dest, lengthBytes, lengthBytes);
-                        dest += length;
-                    }
-                    else {
-                        int count = length;
-                        while (count > 0) {
-                            *(dest++) = contents[sourceIndex++];
-                            count--;
-                        }
-                    }
-                }
+                CharCopy(contents + sourceIndex, dest, length);
             }
 
             newArenaString.Free();
@@ -1421,6 +1392,7 @@ namespace Arenas {
                 return;
             }
             if (index == 0 && count == selfLength) {
+                Length = 0;
                 return;
             }
 
@@ -1482,6 +1454,74 @@ namespace Arenas {
         }
         #endregion
 
+        #region Insert
+        public ArenaString Insert(int index, char* chars, int length) {
+            var arena = Arena;
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot Insert in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = Contents;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot Insert in ArenaString: string memory has previously been freed");
+            }
+
+            var selfLength = Length;
+
+            if (index < 0 || index > selfLength) {
+                throw new ArgumentOutOfRangeException("index");
+            }
+
+            var s = new ArenaString(arena, selfLength + length);
+            var dest = s.Contents;
+
+            var preLength = index;
+            CharCopy(contents, dest, preLength);
+            dest += preLength;
+
+            CharCopy(chars, dest, length);
+            dest += length;
+
+            var postLength = selfLength - preLength;
+            CharCopy(contents + preLength, dest, postLength);
+
+            s.Length = selfLength + length;
+            return s;
+        }
+
+        private ArenaString Insert(int index, ArenaString str, Arena strArena = null) {
+            if (strArena is null) {
+                strArena = str.Arena;
+                if (strArena is null) {
+                    throw new InvalidOperationException("Cannot Insert in ArenaString: source string has not been properly initialized with arena reference");
+                }
+            }
+
+            var strContents = str.Contents;
+            if (strContents == null) {
+                throw new InvalidOperationException("Cannot Insert in ArenaString: source string memory has previously been freed");
+            }
+
+            return Insert(index, strContents, str.Length);
+        }
+
+        public ArenaString Insert(int index, ArenaString str) {
+            var strArena = str.Arena;
+            if (strArena is null) {
+                throw new InvalidOperationException("Cannot Insert in ArenaString: source string has not been properly initialized with arena reference");
+            }
+            return Insert(index, str, strArena);
+        }
+
+        public ArenaString Insert(int index, string str) {
+            var arena = Arena;
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot Insert in ArenaString: string has not been properly initialized with arena reference");
+            }
+            return Insert(index, new ArenaString(arena, str), arena);
+        }
+        #endregion
+
         // doable in place
         // enumerator
         // hashcode and equality
@@ -1491,6 +1531,23 @@ namespace Arenas {
         // PadLeft / PadRight
         // Split
         // Substring
+
+        private static void CharCopy(char* source, char* dest, int length) {
+            if (length > 0) {
+                if (length > 64) {
+                    var lengthBytes = length * sizeof(char);
+                    Buffer.MemoryCopy(source, dest, lengthBytes, lengthBytes);
+                    dest += length;
+                }
+                else {
+                    int count = length;
+                    while (count > 0) {
+                        *(dest++) = *(source++);
+                        count--;
+                    }
+                }
+            }
+        }
 
         public void Free() {
             var arena = contents.Arena;
