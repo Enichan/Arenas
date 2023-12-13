@@ -13,8 +13,6 @@ namespace ArenasTest {
             UnmanagedRef<Person> staleRefTest;
 
             using (var arena = new Arena()) {
-
-
                 // allocate some people in the arena
                 var john = arena.Allocate(new Person());
                 john.Value->FirstName = "John";

@@ -8,6 +8,7 @@ using System.Runtime.InteropServices;
 namespace Arenas {
     using static UnmanagedDictTypes;
 
+    // TODO: Custom IEqualityComparer
     [DebuggerTypeProxy(typeof(ArenaDictDebugView<,>))]
     public unsafe struct ArenaDict<TKey, TValue> : IDictionary<TKey, TValue> where TKey : unmanaged where TValue : unmanaged{
         private const int defaultCapacity = 8;

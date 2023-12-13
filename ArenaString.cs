@@ -12,7 +12,9 @@ using System.Text;
 namespace Arenas {
     // TODO: to int and to double
     // TODO: from int and from double
-    public unsafe readonly struct ArenaString {
+    // TODO: IFormattable
+    // TODO: IComparable
+    public unsafe readonly struct ArenaString : IEnumerable<char>, IEquatable<ArenaString>, IEquatable<string> {
         private const int minCapacity = (16 - sizeof(int)) / sizeof(char);
         private const int contentsOffset = 2;
         private const int contentsOffsetBytes = 2 * sizeof(char);
@@ -1897,19 +1899,6 @@ namespace Arenas {
         }
         #endregion
 
-        // doable in place
-        // enumerator
-        // hashcode and equality
-
-        // doable with reallocations
-        // + operator
-        // IFormattable?
-
-        // static methods
-        // Compare(Ordinal)
-        // IsNullOrEmpty
-        // IsNullOrWhiteSpace
-
         #region Concat/Join static
         public static ArenaString Join(Arena arena, char* sep, int sepLength, char* lhs, int lhsLength, char* rhs, int rhsLength) {
             if (lhs == null) {
@@ -2219,7 +2208,7 @@ namespace Arenas {
             }
         }
 
-        public UnmanagedRef<char> GetDataReference() {
+        public UnmanagedRef<char> GetUnderlyingReference() {
             return contents;
         }
 
@@ -2237,6 +2226,221 @@ namespace Arenas {
             }
             return new string(contents, 0, Length);
         }
+
+        public Enumerator GetEnumerator() {
+            var arena = Arena;
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot enumerate ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = Contents;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot enumerate ArenaString: string memory has previously been freed");
+            }
+
+            return new Enumerator(this);
+        }
+
+        IEnumerator<char> IEnumerable<char>.GetEnumerator() {
+            return GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() {
+            return GetEnumerator();
+        }
+
+        #region Equality
+        public override bool Equals(object obj) {
+            return obj is ArenaString @string &&
+                   Equals(@string);
+        }
+
+        private bool Equals(char* selfContents, int selfLength, char* otherContents, int otherLength) {
+            if (selfLength != otherLength) {
+                return false;
+            }
+            var length = selfLength;
+
+            if (length < 32) {
+                for (int i = 0; i < length; i++) {
+                    if (selfContents[i] != otherContents[i]) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            var selfAlign = (int)(((ulong)selfContents) & 0b111);
+            var otherAlign = (int)(((ulong)otherContents) & 0b111);
+
+            if (selfAlign == otherAlign) {
+                // compare to word alignment
+                var byteptrA = (byte*)selfContents;
+                var byteptrB = (byte*)otherContents;
+
+                var bytes = selfAlign;
+                for (int i = 0; i < bytes; i++) {
+                    if (*(byteptrA++) != *(byteptrB++)) {
+                        return false;
+                    }
+                }
+
+                length -= bytes;
+
+                // compare words
+                var count = length / sizeof(ulong);
+                var longptrA = (ulong*)byteptrA;
+                var longptrB = (ulong*)byteptrB;
+
+                for (int i = 0; i < count; i++) {
+                    if (*(longptrA++) != *(longptrB++)) {
+                        return false;
+                    }
+                }
+
+                length -= count * sizeof(ulong);
+
+                // compare remaining bytes
+                byteptrA = (byte*)longptrA;
+                byteptrB = (byte*)longptrB;
+                bytes = length;
+                for (int i = 0; i < bytes; i++) {
+                    if (*(longptrA++) != *(longptrB++)) {
+                        return false;
+                    }
+                }
+            }
+            else {
+                selfAlign = (int)(((ulong)selfContents) & 0b11);
+                otherAlign = (int)(((ulong)otherContents) & 0b11);
+
+                if (selfAlign == otherAlign) {
+                    // compare to word alignment
+                    var byteptrA = (byte*)selfContents;
+                    var byteptrB = (byte*)otherContents;
+
+                    var bytes = selfAlign;
+                    for (int i = 0; i < bytes; i++) {
+                        if (*(byteptrA++) != *(byteptrB++)) {
+                            return false;
+                        }
+                    }
+
+                    length -= bytes;
+
+                    // compare words
+                    var count = length / sizeof(uint);
+                    var intptrA = (uint*)byteptrA;
+                    var intptrB = (uint*)byteptrB;
+
+                    for (int i = 0; i < count; i++) {
+                        if (*(intptrA++) != *(intptrB++)) {
+                            return false;
+                        }
+                    }
+
+                    length -= count * sizeof(uint);
+
+                    // compare remaining bytes
+                    byteptrA = (byte*)intptrA;
+                    byteptrB = (byte*)intptrB;
+                    bytes = length;
+                    for (int i = 0; i < bytes; i++) {
+                        if (*(intptrA++) != *(intptrB++)) {
+                            return false;
+                        }
+                    }
+                }
+                else {
+                    for (int i = 0; i < length; i++) {
+                        if (selfContents[i] != otherContents[i]) {
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        public bool Equals(ArenaString other) {
+            var selfContents = Contents;
+            var selfLength = Length;
+            var otherContents = other.Contents;
+            var otherLength = other.Length;
+
+            if (selfContents == otherContents) {
+                return true;
+            }
+
+            return Equals(selfContents, selfLength, otherContents, otherLength);
+        }
+
+        public bool Equals(string other) {
+            var selfContents = Contents;
+            if (other is null) {
+                return selfContents == null;
+            }
+
+            var selfLength = Length;
+            if (other.Length != selfLength) {
+                return false;
+            }
+
+            fixed (char* strPtr = other) {
+                return Equals(selfContents, selfLength, strPtr, other.Length);
+            }
+        }
+
+        // TODO: (Core) use string.GetHashCode(ReadOnlySpan<char> value)
+        public override int GetHashCode() {
+            var contents = Contents;
+            if (contents == null) {
+                return 0x0BADBA5E;
+            }
+
+            // from https://stackoverflow.com/a/36846609
+            unchecked {
+                int hash1 = 5381;
+                int hash2 = hash1;
+
+                var length = Length;
+
+                for (int i = 0; i < length && contents[i] != '\0'; i += 2) {
+                    hash1 = ((hash1 << 5) + hash1) ^ contents[i];
+                    if (i == length - 1 || contents[i + 1] == '\0')
+                        break;
+                    hash2 = ((hash2 << 5) + hash2) ^ contents[i + 1];
+                }
+
+                return hash1 + (hash2 * 1566083941);
+            }
+        }
+
+        public static bool operator ==(ArenaString left, ArenaString right) {
+            return left.Equals(right);
+        }
+
+        public static bool operator !=(ArenaString left, ArenaString right) {
+            return !(left == right);
+        }
+
+        public static bool operator ==(string left, ArenaString right) {
+            return right.Equals(left);
+        }
+
+        public static bool operator !=(string left, ArenaString right) {
+            return !(left == right);
+        }
+
+        public static bool operator ==(ArenaString left, string right) {
+            return left.Equals(right);
+        }
+
+        public static bool operator !=(ArenaString left, string right) {
+            return !(left == right);
+        }
+        #endregion
 
         public static ArenaString operator +(ArenaString lhs, ArenaString rhs) {
             return Concat(null, lhs, rhs); 
@@ -2279,8 +2483,93 @@ namespace Arenas {
             }
         }
 
+        public char this[int index] {
+            get {
+                var arena = Arena;
+                if (arena is null) {
+                    throw new InvalidOperationException("Cannot index ArenaString: string has not been properly initialized with arena reference");
+                }
+
+                var contents = Contents;
+                if (contents == null) {
+                    throw new InvalidOperationException("Cannot index ArenaString: string memory has previously been freed");
+                }
+
+                if (index < 0 || index >= Length) {
+                    throw new ArgumentOutOfRangeException(nameof(index));
+                }
+
+                return contents[index];
+            }
+        }
+
         public bool IsAllocated { get { return contents.HasValue; } }
         public Arena Arena { get { return contents.Arena; } }
+
+        [Serializable]
+        public struct Enumerator : IEnumerator<char>, System.Collections.IEnumerator {
+            private ArenaString str;
+            private int index;
+            private int length;
+            private char current;
+
+            internal Enumerator(ArenaString str) {
+                this.str = str;
+                index = 0;
+                length = this.str.Length;
+                current = default;
+            }
+
+            public void Dispose() {
+            }
+
+            public bool MoveNext() {
+                var contents = str.Contents;
+
+                if (contents != null && length == str.Length && ((uint)index < (uint)length)) {
+                    current = contents[index];
+                    index++;
+                    return true;
+                }
+                return MoveNextRare();
+            }
+
+            private bool MoveNextRare() {
+                var contents = str.Contents;
+                if (contents == null || length != str.Length) {
+                    throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                }
+
+                index = length + 1;
+                current = default;
+                return false;
+            }
+
+            public char Current {
+                get {
+                    return current;
+                }
+            }
+
+            object IEnumerator.Current {
+                get {
+                    if (index == 0 || index == length + 1) {
+                        throw new InvalidOperationException("Enumeration has either not started or has already finished.");
+                    }
+                    return Current;
+                }
+            }
+
+            void IEnumerator.Reset() {
+                var contents = str.Contents;
+                if (contents == null || length != str.Length) {
+                    throw new InvalidOperationException("Collection was modified; enumeration operation may not execute.");
+                }
+
+                index = 0;
+                current = default;
+            }
+        }
     }
 
     [DebuggerTypeProxy(typeof(StringSplitResultsDebugView))]
@@ -2366,7 +2655,7 @@ namespace Arenas {
                     throw new InvalidOperationException("Cannot set item in StringSplitResults: results instance memory has previously been freed");
                 }
 
-                items[index] = (UnmanagedRef)value.GetDataReference();
+                items[index] = (UnmanagedRef)value.GetUnderlyingReference();
             }
         }
 
