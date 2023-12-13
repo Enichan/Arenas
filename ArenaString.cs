@@ -1635,7 +1635,7 @@ namespace Arenas {
 
                         int sepLength = separators.LengthOf(i);
                         if (index + sepLength > selfLength) { continue; }
-                        
+
                         if (separators.IndexOf(i, index, selfLength, contents) > -1) {
                             var span = new SplitSpan(fromIndex, index - fromIndex);
                             index += sepLength;
@@ -1895,13 +1895,129 @@ namespace Arenas {
         // doable with reallocations
         // + operator
         // IFormattable?
-        
+
         // static methods
         // Join
         // Compare(Ordinal)
         // Concat
         // IsNullOrEmpty
         // IsNullOrWhiteSpace
+
+        public static ArenaString Concat(Arena arena, char* lhs, int lhsLength, char* rhs, int rhsLength) {
+            if (lhs == null) {
+                throw new ArgumentNullException(nameof(lhs));
+            }
+            if (rhs == null) {
+                throw new ArgumentNullException(nameof(rhs));
+            }
+
+            var result = new ArenaString(arena, lhsLength + rhsLength);
+            var contents = result.Contents;
+
+            CharCopy(lhs, contents, lhsLength);
+            CharCopy(rhs, contents + lhsLength, rhsLength);
+
+            result.Length = lhsLength + rhsLength;
+            return result;
+        }
+
+        public static ArenaString Concat(Arena arena, ArenaString lhs, ArenaString rhs) {
+            var lhsArena = lhs.Arena;
+            if (lhsArena is null) {
+                throw new InvalidOperationException("Cannot concatenate ArenaStrings: string has not been properly initialized with arena reference");
+            }
+            var lhsContents = lhs.Contents;
+            if (lhsContents == null) {
+                throw new InvalidOperationException("Cannot concatenate ArenaStrings: string memory has previously been freed");
+            }
+            var lhsLength = lhs.Length;
+
+            var rhsArena = rhs.Arena;
+            if (rhsArena is null) {
+                throw new InvalidOperationException("Cannot concatenate ArenaStrings: string has not been properly initialized with arena reference");
+            }
+            var rhsContents = rhs.Contents;
+            if (rhsContents == null) {
+                throw new InvalidOperationException("Cannot concatenate ArenaStrings: string memory has previously been freed");
+            }
+            var rhsLength = rhs.Length;
+
+            if (arena is null) {
+                if (lhsArena != rhsArena) {
+                    throw new InvalidOperationException("Cannot concatenate ArenaStrings: both strings do not belong to the same arena. Please specify an arena when using the Concat method.");
+                }
+                arena = lhsArena;
+            }
+
+            return Concat(arena, lhsContents, lhsLength, rhsContents, rhsLength);
+        }
+
+        public static ArenaString Concat(Arena arena, ArenaString s0, ArenaString s1, ArenaString s2) {
+            return Concat(arena, Concat(arena, s0, s1), s2);
+        }
+
+        public static ArenaString Concat(Arena arena, ArenaString s0, ArenaString s1, ArenaString s2, ArenaString s3) {
+            return Concat(arena, Concat(arena, Concat(arena, s0, s1), s2), s3);
+        }
+
+        public static ArenaString Concat(Arena arena, IEnumerable<ArenaString> values) {
+            var s = new ArenaString(arena, 0);
+            foreach (var v in values) {
+                var result = s.Concat(v);
+                s.Free();
+                s = result;
+            }
+            return s;
+        }
+
+        /// <summary>
+        /// Non-boxing version of Concat when the enumerator and values are both structs
+        /// </summary>
+        public static ArenaString Concat<TEnum>(Arena arena, TEnum enumerator) where TEnum : struct, IEnumerator<ArenaString> {
+            var s = new ArenaString(arena, 0);
+            while (enumerator.MoveNext()) {
+                var result = s.Concat(enumerator.Current);
+                s.Free();
+                s = result;
+            }
+            return s;
+        }
+
+        public static ArenaString Concat(Arena arena, IEnumerable<object> values) {
+            var s = new ArenaString(arena, 0);
+            foreach (var v in values) {
+                if (v is null) {
+                    continue;
+                }
+
+                if (v is ArenaString) {
+                    var result = s.Concat((ArenaString)v);
+                    s.Free();
+                    s = result;
+                }
+                else {
+                    var tmp = new ArenaString(arena, v.ToString());
+                    try {
+                        var result = s.Concat(tmp);
+                        s.Free();
+                        s = result;
+                    }
+                    finally {
+                        tmp.Free();
+                    }
+                }
+            }
+            return s;
+        }
+
+        ///// <summary>
+        ///// Non-boxing version of Concat when the enumerator and values are both structs
+        ///// </summary>
+        //public static ArenaString Concat<TEnum, TVal>(Arena arena, TEnum enumerator) where TEnum : struct, IEnumerator<TVal> where TVal : struct {
+        //    while (enumerator.MoveNext()) {
+
+        //    }
+        //}
 
         private static void CharCopy(char* source, char* dest, int length) {
             if (length > 0) {
@@ -1924,6 +2040,13 @@ namespace Arenas {
             return contents;
         }
 
+        /// <summary>
+        /// Concatenates this string in this string's arena with another string.
+        /// </summary>
+        public ArenaString Concat(ArenaString other) {
+            return Concat(Arena, this, other);
+        }
+
         public void Free() {
             var arena = contents.Arena;
             if (!(arena is null)) {
@@ -1937,6 +2060,10 @@ namespace Arenas {
                 return string.Empty;
             }
             return new string(contents, 0, Length);
+        }
+
+        public static ArenaString operator +(ArenaString lhs, ArenaString rhs) {
+            return Concat(null, lhs, rhs); 
         }
 
         public static explicit operator ArenaString(UnmanagedRef<char> strData) {
