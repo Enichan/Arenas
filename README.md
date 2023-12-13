@@ -161,7 +161,7 @@ unsafe public struct Person : IArenaContents {
 
 Zero-allocation string splitting via arenas (requires .NET Core):
 
-*This sample was made before the ArenaString type existed as an example of interaction between arenas and the .NET Core Span type. For zero-allocation string splitting please use ArenaString.Split*
+**This sample was made before the ArenaString type existed as an example of interaction between arenas and the .NET Core Span type. For zero-allocation string splitting please use ArenaString.Split**
 
 ```csharp
 class Program {
