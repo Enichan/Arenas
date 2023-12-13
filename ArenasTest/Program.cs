@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Security.Policy;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -84,6 +85,15 @@ namespace ArenasTest {
                     }
                 }
                 Console.WriteLine(isSame ? "ArenaID bytes match" : "ArenaID bytes don't match");
+
+                // split a string into a bunch of ArenaString instances
+                using (var splitResults = ArenaString.Split(arena, "Lorem ipsum dolor sit amet", ' ')) {
+                    for (int i = 0; i < splitResults.Count; i++) {
+                        var str = splitResults[i];
+                        Console.WriteLine(str);
+                        str.Free();
+                    }
+                }
 
                 // final stale reference test for disposal
                 staleRefTest = arena.Allocate(new Person());
