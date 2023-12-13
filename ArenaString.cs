@@ -2056,7 +2056,7 @@ namespace Arenas {
         /// <summary>
         /// Non-boxing version of Join when the enumerator is a struct
         /// </summary>
-        public static ArenaString Join<TEnum>(Arena arena, ArenaString sep, TEnum enumerator) where TEnum : IEnumerator<ArenaString> {
+        public static ArenaString Join<TEnum>(Arena arena, ArenaString sep, ref TEnum enumerator) where TEnum : IEnumerator<ArenaString> {
             var s = new ArenaString(arena, 0);
             while (enumerator.MoveNext()) {
                 var result = Join(arena, sep, s, enumerator.Current);
@@ -2069,17 +2069,17 @@ namespace Arenas {
         /// <summary>
         /// Non-boxing version of Concat when the enumerator is a struct
         /// </summary>
-        public static ArenaString Concat<TEnum>(Arena arena, TEnum enumerator) where TEnum : IEnumerator<ArenaString> {
-            return Join(arena, default(ArenaString), enumerator);
+        public static ArenaString Concat<TEnum>(Arena arena, ref TEnum enumerator) where TEnum : IEnumerator<ArenaString> {
+            return Join(arena, default(ArenaString), ref enumerator);
         }
 
         /// <summary>
         /// Non-boxing version of Join when the enumerator is a struct
         /// </summary>
-        public static ArenaString Join<TEnum>(Arena arena, string separator, TEnum enumerator) where TEnum : IEnumerator<ArenaString> {
+        public static ArenaString Join<TEnum>(Arena arena, string separator, ref TEnum enumerator) where TEnum : IEnumerator<ArenaString> {
             var sep = new ArenaString(arena, separator);
             try {
-                return Join(arena, sep, enumerator);
+                return Join(arena, sep, ref enumerator);
             }
             finally {
                 sep.Free();
@@ -2155,7 +2155,7 @@ namespace Arenas {
         /// <summary>
         /// Non-boxing version of Join when the enumerator is a struct
         /// </summary>
-        public static ArenaString Join<TEnum, TVal>(Arena arena, ArenaString sep, TEnum enumerator) where TEnum : IEnumerator<TVal> {
+        public static ArenaString Join<TEnum, TVal>(Arena arena, ArenaString sep, ref TEnum enumerator) where TEnum : IEnumerator<TVal> {
             var s = new ArenaString(arena, 0);
             while (enumerator.MoveNext()) {
                 var v = enumerator.Current;
@@ -2175,17 +2175,17 @@ namespace Arenas {
         /// <summary>
         /// Non-boxing version of Concat when the enumerator is a struct
         /// </summary>
-        public static ArenaString Concat<TEnum, TVal>(Arena arena, TEnum enumerator) where TEnum : IEnumerator<TVal> {
-            return Join<TEnum, TVal>(arena, default(ArenaString), enumerator);
+        public static ArenaString Concat<TEnum, TVal>(Arena arena, ref TEnum enumerator) where TEnum : IEnumerator<TVal> {
+            return Join<TEnum, TVal>(arena, default(ArenaString), ref enumerator);
         }
 
         /// <summary>
         /// Non-boxing version of Join when the enumerator is a struct
         /// </summary>
-        public static ArenaString Join<TEnum, TVal>(Arena arena, string separator, TEnum enumerator) where TEnum : IEnumerator<TVal> {
+        public static ArenaString Join<TEnum, TVal>(Arena arena, string separator, ref TEnum enumerator) where TEnum : IEnumerator<TVal> {
             var sep = new ArenaString(arena, separator);
             try {
-                return Join<TEnum, TVal>(arena, sep, enumerator);
+                return Join<TEnum, TVal>(arena, sep, ref enumerator);
             }
             finally {
                 sep.Free();
