@@ -305,4 +305,4 @@ static unsafe void ArenaArenas() {
 
 ## Should I use this in production?
 
-Probably not. Unless you really want to, I'm not your dad. I'd probably use it myself, but I'm a game developer, what do I know?
+Eh, maybe? I feel like the library is pretty mature, so for small projects I think it'd be okay. Probably not for big dang enterprise stuff though. Unless you really want to, I'm not your dad. I'd definitely use it myself at this point, but I'm a game developer, what do I know?
