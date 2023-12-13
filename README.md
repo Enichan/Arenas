@@ -159,6 +159,34 @@ unsafe public struct Person : IArenaContents {
 }
 ```
 
+Store references to items in arena in ArenaList:
+
+```csharp
+using (var arena = new Arena()) {
+    // allocate a list
+    var people = new ArenaList<UnsafeRef>(arena);
+
+    // allocate some people references
+    var john = arena.Allocate(new Person());
+    john.Value->FirstName = "John";
+    john.Value->LastName = "Doe";
+
+    var jack = arena.Allocate(new Person());
+    jack.Value->FirstName = "Jack";
+    jack.Value->LastName = "Black";
+
+    // store references inside the list
+    people.Add(john);
+    people.Add(jack);
+
+    // iterate over unmanaged list and write out all the people
+    foreach (var item in people) {
+        var person = item.As<Person>();
+        Console.WriteLine(*person);
+    }
+}
+```
+
 Zero-allocation string splitting via arenas (requires .NET Core):
 
 **This sample was made before the ArenaString type existed as an example of interaction between arenas and the .NET Core Span type. For zero-allocation string splitting please use ArenaString.Split**
@@ -233,34 +261,6 @@ class Program {
 }
 ```
 
-Store references to items in arena in ArenaList:
-
-```csharp
-using (var arena = new Arena()) {
-    // allocate a list
-    var people = new ArenaList<UnsafeRef>(arena);
-
-    // allocate some people references
-    var john = arena.Allocate(new Person());
-    john.Value->FirstName = "John";
-    john.Value->LastName = "Doe";
-
-    var jack = arena.Allocate(new Person());
-    jack.Value->FirstName = "Jack";
-    jack.Value->LastName = "Black";
-
-    // store references inside the list
-    people.Add(john);
-    people.Add(jack);
-
-    // iterate over unmanaged list and write out all the people
-    foreach (var item in people) {
-        var person = item.As<Person>();
-        Console.WriteLine(*person);
-    }
-}
-```
-
 "yo dawg i herd u liek arena allocators so i put some arena allocators in ur arena allocators":
 
 ```csharp
@@ -299,7 +299,7 @@ static unsafe void ArenaArenas() {
 ## Potential future work
 
 - More arena-specific generic collections like HashSet/Stack/Queue/LinkedList
-- Arena-specific string type
+- More ArenaString refinements
 - ManagedObject struct which exists purely to store references to managed objects in arenas?
 - Custom per-arena tracing GC?
 
