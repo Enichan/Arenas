@@ -337,7 +337,7 @@ namespace Arenas {
             Free(uref);
         }
 
-        public void Free<T>(in T items) where T : struct, IUnmanagedRef {
+        public void Free<T>(in T items) where T : IUnmanagedRef {
             Free(items.Reference);
         }
 

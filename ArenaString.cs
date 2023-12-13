@@ -981,7 +981,7 @@ namespace Arenas {
         #endregion
 
         #region Trim(End/Start)
-        private void Trim<T>(in T trimProvider, bool trimStart, bool trimEnd, Arena arena = null, char* contents = null) where T : struct, IIsTrimChar {
+        private void Trim<T>(in T trimProvider, bool trimStart, bool trimEnd, Arena arena = null, char* contents = null) where T : IIsTrimChar {
             if (arena == null) {
                 arena = Arena;
                 if (arena == null) {
@@ -1071,7 +1071,7 @@ namespace Arenas {
             Trim(new TrimIsChar(chr), false, true);
         }
 
-        private ArenaString TrimCopy<T>(in T trimProvider, bool trimStart, bool trimEnd, Arena arena) where T : struct, IIsTrimChar {
+        private ArenaString TrimCopy<T>(in T trimProvider, bool trimStart, bool trimEnd, Arena arena) where T : IIsTrimChar {
             var s = new ArenaString(arena, this);
             s.Trim(trimProvider, trimStart, trimEnd, arena);
             return s;
@@ -1604,7 +1604,7 @@ namespace Arenas {
         #endregion
 
         #region Split
-        private static StringSplitResults Split<T>(Arena arena, T separators, int count, StringSplitOptions options, char* str, int strLength) where T : struct, ISeparatorProvider {
+        private static StringSplitResults Split<T>(Arena arena, T separators, int count, StringSplitOptions options, char* str, int strLength) where T : ISeparatorProvider {
             if (str == null) {
                 return default;
             }
@@ -1682,7 +1682,7 @@ namespace Arenas {
             }
         }
 
-        private StringSplitResults Split<T>(T separators, int count, StringSplitOptions options) where T : struct, ISeparatorProvider {
+        private StringSplitResults Split<T>(T separators, int count, StringSplitOptions options) where T : ISeparatorProvider {
             var arena = Arena;
             if (arena is null) {
                 throw new InvalidOperationException("Cannot Split in ArenaString: string has not been properly initialized with arena reference");
@@ -2056,7 +2056,7 @@ namespace Arenas {
         /// <summary>
         /// Non-boxing version of Join when the enumerator is a struct
         /// </summary>
-        public static ArenaString Join<TEnum>(Arena arena, ArenaString sep, TEnum enumerator) where TEnum : struct, IEnumerator<ArenaString> {
+        public static ArenaString Join<TEnum>(Arena arena, ArenaString sep, TEnum enumerator) where TEnum : IEnumerator<ArenaString> {
             var s = new ArenaString(arena, 0);
             while (enumerator.MoveNext()) {
                 var result = Join(arena, sep, s, enumerator.Current);
@@ -2069,14 +2069,14 @@ namespace Arenas {
         /// <summary>
         /// Non-boxing version of Concat when the enumerator is a struct
         /// </summary>
-        public static ArenaString Concat<TEnum>(Arena arena, TEnum enumerator) where TEnum : struct, IEnumerator<ArenaString> {
+        public static ArenaString Concat<TEnum>(Arena arena, TEnum enumerator) where TEnum : IEnumerator<ArenaString> {
             return Join(arena, default(ArenaString), enumerator);
         }
 
         /// <summary>
         /// Non-boxing version of Join when the enumerator is a struct
         /// </summary>
-        public static ArenaString Join<TEnum>(Arena arena, string separator, TEnum enumerator) where TEnum : struct, IEnumerator<ArenaString> {
+        public static ArenaString Join<TEnum>(Arena arena, string separator, TEnum enumerator) where TEnum : IEnumerator<ArenaString> {
             var sep = new ArenaString(arena, separator);
             try {
                 return Join(arena, sep, enumerator);
@@ -2153,9 +2153,9 @@ namespace Arenas {
         }
 
         /// <summary>
-        /// Non-boxing version of Join when the enumerator and values are both structs
+        /// Non-boxing version of Join when the enumerator is a struct
         /// </summary>
-        public static ArenaString Join<TEnum, TVal>(Arena arena, ArenaString sep, TEnum enumerator) where TEnum : struct, IEnumerator<TVal> where TVal : struct {
+        public static ArenaString Join<TEnum, TVal>(Arena arena, ArenaString sep, TEnum enumerator) where TEnum : IEnumerator<TVal> {
             var s = new ArenaString(arena, 0);
             while (enumerator.MoveNext()) {
                 var v = enumerator.Current;
@@ -2173,16 +2173,16 @@ namespace Arenas {
         }
 
         /// <summary>
-        /// Non-boxing version of Concat when the enumerator and values are both structs
+        /// Non-boxing version of Concat when the enumerator is a struct
         /// </summary>
-        public static ArenaString Concat<TEnum, TVal>(Arena arena, TEnum enumerator) where TEnum : struct, IEnumerator<TVal> where TVal : struct {
+        public static ArenaString Concat<TEnum, TVal>(Arena arena, TEnum enumerator) where TEnum : IEnumerator<TVal> {
             return Join<TEnum, TVal>(arena, default(ArenaString), enumerator);
         }
 
         /// <summary>
-        /// Non-boxing version of Join when the enumerator and values are both structs
+        /// Non-boxing version of Join when the enumerator is a struct
         /// </summary>
-        public static ArenaString Join<TEnum, TVal>(Arena arena, string separator, TEnum enumerator) where TEnum : struct, IEnumerator<TVal> where TVal : struct {
+        public static ArenaString Join<TEnum, TVal>(Arena arena, string separator, TEnum enumerator) where TEnum : IEnumerator<TVal> {
             var sep = new ArenaString(arena, separator);
             try {
                 return Join<TEnum, TVal>(arena, sep, enumerator);
