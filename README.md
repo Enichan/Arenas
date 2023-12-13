@@ -21,6 +21,8 @@ Use by creating a `new Arena()` and calling `Allocate` with blittable structs or
 - Debug view will show list of items for `UnmanagedRef` types (handy when inspecting multiple elements)
 - Copy `UnmanagedRef` types to arrays via `ToArray` and `CopyTo`
 - Generic collections `ArenaList<T>` and `ArenaDict<TKey, TValue>` for storing collections of unmanaged items inside an arena instance
+- `ArenaString` type for working with string data in arenas
+- Static methods on `ArenaString` for splitting standard C# strings and `char*` pointers into ArenaStrings
 - Ability to free items via `IntPtr`
 - `UnmanagedRef` is a lightweight struct (only 16 bytes in size) but will cache element counts (always for 7 or fewer elements, and for 32k or fewer elements until item versions exceed 32k)
 - `UnmanagedRef` is blittable and can itself be stored inside arenas (see samples)
