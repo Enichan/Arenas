@@ -14,6 +14,7 @@ namespace Arenas {
     // TODO: from int and from double
     // TODO: IFormattable
     // TODO: IComparable
+    // TODO: switch to `using` blocks for temporary instances of ArenaString and ArenaList
     public unsafe readonly struct ArenaString : IEnumerable<char>, IEquatable<ArenaString>, IEquatable<string>, IDisposable {
         private const int minCapacity = (16 - sizeof(int)) / sizeof(char);
         private const int contentsOffset = 2;
