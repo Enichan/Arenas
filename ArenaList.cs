@@ -17,6 +17,10 @@ namespace Arenas {
 
         private UnmanagedRef<UnmanagedList> info;
 
+        private ArenaList(UnmanagedRef<UnmanagedList> listData) {
+            info = listData;
+        }
+
         public ArenaList(Arena arena, int capacity = defaultCapacity) {
             if (arena is null) {
                 throw new ArgumentNullException(nameof(arena));
@@ -324,6 +328,14 @@ namespace Arenas {
 
         IEnumerator IEnumerable.GetEnumerator() {
             return GetEnumerator();
+        }
+
+        public UnmanagedRef<UnmanagedList> GetUnderlyingReference() {
+            return info;
+        }
+
+        public static explicit operator ArenaList<T>(UnmanagedRef<UnmanagedList> listData) {
+            return new ArenaList<T>(listData);
         }
 
         public T this[int index] {

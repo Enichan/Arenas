@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace Arenas {
+    using static Arenas.UnmanagedListTypes;
     using static UnmanagedDictTypes;
 
     // TODO: Custom IEqualityComparer
@@ -21,6 +22,10 @@ namespace Arenas {
         }
 
         private UnmanagedRef<UnmanagedDict> info;
+
+        private ArenaDict(UnmanagedRef<UnmanagedDict> dictData) {
+            info = dictData;
+        }
 
         public ArenaDict(Arena arena, int capacity = defaultCapacity) {
             if (arena is null) {
@@ -574,6 +579,14 @@ namespace Arenas {
 
         IEnumerator IEnumerable.GetEnumerator() {
             return GetEnumerator();
+        }
+
+        public UnmanagedRef<UnmanagedDict> GetUnderlyingReference() {
+            return info;
+        }
+
+        public static explicit operator ArenaDict<TKey, TValue>(UnmanagedRef<UnmanagedDict> dictData) {
+            return new ArenaDict<TKey, TValue>(dictData);
         }
 
         public TValue this[TKey key] {
