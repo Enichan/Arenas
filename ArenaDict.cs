@@ -10,7 +10,7 @@ namespace Arenas {
 
     // TODO: Custom IEqualityComparer
     [DebuggerTypeProxy(typeof(ArenaDictDebugView<,>))]
-    public unsafe struct ArenaDict<TKey, TValue> : IDictionary<TKey, TValue> where TKey : unmanaged where TValue : unmanaged{
+    public unsafe struct ArenaDict<TKey, TValue> : IDictionary<TKey, TValue>, IDisposable where TKey : unmanaged where TValue : unmanaged {
         private const int defaultCapacity = 8;
         private const uint fibHashMagic = 2654435769;
         private const int noneHashCode = 0;
@@ -131,6 +131,13 @@ namespace Arenas {
             Arena.Free(items);
             Arena.Free(info);
             info = default;
+        }
+
+        public void Dispose() {
+            if (!IsAllocated) {
+                return;
+            }
+            Free();
         }
 
         public void Clear() {

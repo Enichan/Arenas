@@ -12,7 +12,7 @@ namespace Arenas {
     using static UnmanagedListTypes;
 
     [DebuggerTypeProxy(typeof(ArenaListDebugView<>))]
-    public unsafe struct ArenaList<T> : IList<T> where T : unmanaged {
+    public unsafe struct ArenaList<T> : IList<T>, IDisposable where T : unmanaged {
         private const int defaultCapacity = 4;
 
         private UnmanagedRef<UnmanagedList> info;
@@ -50,6 +50,13 @@ namespace Arenas {
             Arena.Free(items);
             Arena.Free(info);
             info = default;
+        }
+
+        public void Dispose() {
+            if (!IsAllocated) {
+                return;
+            }
+            Free();
         }
 
         public void Clear() {

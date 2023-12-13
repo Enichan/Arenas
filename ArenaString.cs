@@ -14,7 +14,7 @@ namespace Arenas {
     // TODO: from int and from double
     // TODO: IFormattable
     // TODO: IComparable
-    public unsafe readonly struct ArenaString : IEnumerable<char>, IEquatable<ArenaString>, IEquatable<string> {
+    public unsafe readonly struct ArenaString : IEnumerable<char>, IEquatable<ArenaString>, IEquatable<string>, IDisposable {
         private const int minCapacity = (16 - sizeof(int)) / sizeof(char);
         private const int contentsOffset = 2;
         private const int contentsOffsetBytes = 2 * sizeof(char);
@@ -2406,6 +2406,13 @@ namespace Arenas {
             if (!(arena is null)) {
                 arena.Free(in contents);
             }
+        }
+
+        public void Dispose() {
+            if (!IsAllocated) {
+                return;
+            }
+            Free();
         }
 
         public override string ToString() {
