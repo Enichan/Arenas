@@ -1603,15 +1603,9 @@ namespace Arenas {
         #endregion
 
         #region Split
-        private StringSplitResults Split<T>(T separators, int count, StringSplitOptions options) where T : struct, ISeparatorProvider {
-            var arena = Arena;
-            if (arena is null) {
-                throw new InvalidOperationException("Cannot Split in ArenaString: string has not been properly initialized with arena reference");
-            }
-
-            var contents = Contents;
-            if (contents == null) {
-                throw new InvalidOperationException("Cannot Split in ArenaString: string memory has previously been freed");
+        private static StringSplitResults Split<T>(Arena arena, T separators, int count, StringSplitOptions options, char* str, int strLength) where T : struct, ISeparatorProvider {
+            if (str == null) {
+                return default;
             }
 
             if (count < 0) {
@@ -1622,23 +1616,22 @@ namespace Arenas {
                 return new StringSplitResults(arena, 0);
             }
 
-            var selfLength = Length;
             var splitSpans = new ArenaList<SplitSpan>(arena);
 
             try {
                 var index = 0;
                 var fromIndex = index;
 
-                while (index < selfLength) {
+                while (index < strLength) {
                     var split = false;
 
                     for (int i = 0; i < separators.Count; i++) {
                         if (separators.IsNullOrEmpty(i)) { continue; }
 
                         int sepLength = separators.LengthOf(i);
-                        if (index + sepLength > selfLength) { continue; }
+                        if (index + sepLength > strLength) { continue; }
 
-                        if (separators.IndexOf(i, index, selfLength, contents) > -1) {
+                        if (separators.IndexOf(i, index, strLength, str) > -1) {
                             var span = new SplitSpan(fromIndex, index - fromIndex);
                             index += sepLength;
                             fromIndex = index;
@@ -1663,7 +1656,7 @@ namespace Arenas {
                 }
 
                 {
-                    var span = new SplitSpan(fromIndex, selfLength - fromIndex);
+                    var span = new SplitSpan(fromIndex, strLength - fromIndex);
                     if (span.Count > 0 || options != StringSplitOptions.RemoveEmptyEntries) {
                         splitSpans.Add(span);
                     }
@@ -1675,7 +1668,7 @@ namespace Arenas {
                     if (span.Count == 0 && options == StringSplitOptions.RemoveEmptyEntries) { continue; }
 
                     var s = new ArenaString(arena, span.Count);
-                    CharCopy(contents + span.Start, s.Contents, span.Count);
+                    CharCopy(str + span.Start, s.Contents, span.Count);
                     s.Length = span.Count;
 
                     results[i] = s;
@@ -1686,6 +1679,20 @@ namespace Arenas {
             finally {
                 splitSpans.Free();
             }
+        }
+
+        private StringSplitResults Split<T>(T separators, int count, StringSplitOptions options) where T : struct, ISeparatorProvider {
+            var arena = Arena;
+            if (arena is null) {
+                throw new InvalidOperationException("Cannot Split in ArenaString: string has not been properly initialized with arena reference");
+            }
+
+            var contents = Contents;
+            if (contents == null) {
+                throw new InvalidOperationException("Cannot Split in ArenaString: string memory has previously been freed");
+            }
+
+            return Split(arena, separators, count, options, contents, Length);
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -1777,7 +1784,7 @@ namespace Arenas {
             public bool IsNullOrEmpty(int index) => false;
             public int LengthOf(int index) => 1;
             public int IndexOf(int index, int searchIndex, int selfLength, char* contents)
-                => str.IndexOf(arr[index], searchIndex, 1, selfLength, false, false, contents);
+                => contents[searchIndex] == arr[index] ? searchIndex : -1;
         }
 
         public StringSplitResults Split(char[] separators, int count = int.MaxValue, StringSplitOptions options = StringSplitOptions.None) {
@@ -1807,7 +1814,7 @@ namespace Arenas {
             public bool IsNullOrEmpty(int index) => false;
             public int LengthOf(int index) => 1;
             public int IndexOf(int index, int searchIndex, int selfLength, char* contents)
-                => str.IndexOf(chr, searchIndex, 1, selfLength, false, false, contents);
+                => contents[searchIndex] == chr ? searchIndex : -1;
         }
 
         public StringSplitResults Split(char separator, int count = int.MaxValue, StringSplitOptions options = StringSplitOptions.None) {
@@ -1819,12 +1826,6 @@ namespace Arenas {
         }
 
         private readonly struct WhiteSpaceSeparator : ISeparatorProvider {
-            private readonly ArenaString str;
-
-            public WhiteSpaceSeparator(ArenaString str) {
-                this.str = str;
-            }
-
             public int Count { get => 1; }
             public bool IsNullOrEmpty(int index) => false;
             public int LengthOf(int index) => 1;
@@ -1833,11 +1834,11 @@ namespace Arenas {
         }
 
         public StringSplitResults SplitWhiteSpace(int count = int.MaxValue, StringSplitOptions options = StringSplitOptions.None) {
-            return Split(new WhiteSpaceSeparator(this), count, options);
+            return Split(new WhiteSpaceSeparator(), count, options);
         }
 
         public StringSplitResults SplitWhiteSpace(StringSplitOptions options) {
-            return Split(new WhiteSpaceSeparator(this), int.MaxValue, options);
+            return Split(new WhiteSpaceSeparator(), int.MaxValue, options);
         }
         #endregion
 
@@ -2188,6 +2189,194 @@ namespace Arenas {
             finally {
                 sep.Free();
             }
+        }
+        #endregion
+
+        #region Split static
+        public static StringSplitResults SplitWhiteSpace(Arena arena, string str, int count = int.MaxValue, StringSplitOptions options = StringSplitOptions.None) {
+            fixed (char* chars = str) {
+                return Split(arena, new WhiteSpaceSeparator(), count, options, chars, str.Length);
+            }
+        }
+
+        public static StringSplitResults SplitWhiteSpace(Arena arena, string str, StringSplitOptions options) {
+            fixed (char* chars = str) {
+                return Split(arena, new WhiteSpaceSeparator(), int.MaxValue, options, chars, str.Length);
+            }
+        }
+
+        private readonly struct DotNetStringArraySeparator : ISeparatorProvider {
+            private readonly string[] arr;
+            private readonly string str;
+
+            public DotNetStringArraySeparator(string[] arr, string str) {
+                this.arr = arr;
+                this.str = str;
+            }
+
+            public int Count { get => arr.Length; }
+            public bool IsNullOrEmpty(int index) => arr[index] == null || arr[index].Length == 0;
+            public int LengthOf(int index) => arr[index].Length;
+            public int IndexOf(int index, int searchIndex, int selfLength, char* contents)
+                => str.IndexOf(arr[index], searchIndex, 1);
+        }
+
+        public static StringSplitResults Split(Arena arena, string str, string[] separators, int count = int.MaxValue, StringSplitOptions options = StringSplitOptions.None) {
+            if (separators == null || separators.Length == 0) {
+                return SplitWhiteSpace(arena, str, count, options);
+            }
+            fixed (char* chars = str) {
+                return Split(arena, new DotNetStringArraySeparator(separators, str), count, options, chars, str.Length);
+            }
+        }
+
+        public static StringSplitResults Split(Arena arena, string str, string[] separators, StringSplitOptions options) {
+            if (separators == null || separators.Length == 0) {
+                return SplitWhiteSpace(arena, str, int.MaxValue, options);
+            }
+            return Split(arena, str, separators, int.MaxValue, options);
+        }
+
+        private readonly struct DotNetStringSeparator : ISeparatorProvider {
+            private readonly string sep;
+            private readonly string str;
+
+            public DotNetStringSeparator(string sep, string str) {
+                this.sep = sep;
+                this.str = str;
+            }
+
+            public int Count { get => 1; }
+            public bool IsNullOrEmpty(int index) => sep == null || sep.Length == 0;
+            public int LengthOf(int index) => sep.Length;
+            public int IndexOf(int index, int searchIndex, int selfLength, char* contents)
+                => str.IndexOf(sep, searchIndex, 1);
+        }
+
+        public static StringSplitResults Split(Arena arena, string str, string separator, int count = int.MaxValue, StringSplitOptions options = StringSplitOptions.None) {
+            fixed (char* chars = str) {
+                return Split(arena, new DotNetStringSeparator(separator, str), count, options, chars, str.Length);
+            }
+        }
+
+        public static StringSplitResults Split(Arena arena, string str, string separator, StringSplitOptions options) {
+            return Split(arena, str, separator, int.MaxValue, options);
+        }
+
+        private readonly struct DotNetStringCharArraySeparator : ISeparatorProvider {
+            private readonly char[] arr;
+
+            public DotNetStringCharArraySeparator(char[] arr) {
+                this.arr = arr;
+            }
+
+            public int Count { get => arr.Length; }
+            public bool IsNullOrEmpty(int index) => false;
+            public int LengthOf(int index) => 1;
+            public int IndexOf(int index, int searchIndex, int selfLength, char* contents)
+                => contents[searchIndex] == arr[index] ? searchIndex : -1;
+        }
+
+        public static StringSplitResults Split(Arena arena, string str, char[] separators, int count = int.MaxValue, StringSplitOptions options = StringSplitOptions.None) {
+            if (separators == null || separators.Length == 0) {
+                return SplitWhiteSpace(arena, str, count, options);
+            }
+            fixed (char* chars = str) {
+                return Split(arena, new DotNetStringCharArraySeparator(separators), count, options, chars, str.Length);
+            }
+        }
+
+        public static StringSplitResults Split(Arena arena, string str, char[] separators, StringSplitOptions options) {
+            if (separators == null || separators.Length == 0) {
+                return SplitWhiteSpace(arena, str, int.MaxValue, options);
+            }
+            fixed (char* chars = str) {
+                return Split(arena, new DotNetStringCharArraySeparator(separators), int.MaxValue, options, chars, str.Length);
+            }
+        }
+
+        private readonly struct DotNetStringCharSeparator : ISeparatorProvider {
+            private readonly char chr;
+
+            public DotNetStringCharSeparator(char chr) {
+                this.chr = chr;
+            }
+
+            public int Count { get => 1; }
+            public bool IsNullOrEmpty(int index) => false;
+            public int LengthOf(int index) => 1;
+            public int IndexOf(int index, int searchIndex, int selfLength, char* contents)
+                => contents[searchIndex] == chr ? searchIndex : -1;
+        }
+
+        public static StringSplitResults Split(Arena arena, string str, char separator, int count = int.MaxValue, StringSplitOptions options = StringSplitOptions.None) {
+            fixed (char* chars = str) {
+                return Split(arena, new DotNetStringCharSeparator(separator), count, options, chars, str.Length);
+            }
+        }
+
+        public static StringSplitResults Split(Arena arena, string str, char separator, StringSplitOptions options) {
+            fixed (char* chars = str) {
+                return Split(arena, new DotNetStringCharSeparator(separator), int.MaxValue, options, chars, str.Length);
+            }
+        }
+
+        public static StringSplitResults SplitWhiteSpace(Arena arena, char* str, int strLength, int count = int.MaxValue, StringSplitOptions options = StringSplitOptions.None) {
+            return Split(arena, new WhiteSpaceSeparator(), count, options, str, strLength);
+        }
+
+        public static StringSplitResults SplitWhiteSpace(Arena arena, char* str, int strLength, StringSplitOptions options) {
+            return Split(arena, new WhiteSpaceSeparator(), int.MaxValue, options, str, strLength);
+        }
+
+        private readonly struct CharPtrCharArraySeparator : ISeparatorProvider {
+            private readonly char[] arr;
+
+            public CharPtrCharArraySeparator(char[] arr) {
+                this.arr = arr;
+            }
+
+            public int Count { get => arr.Length; }
+            public bool IsNullOrEmpty(int index) => false;
+            public int LengthOf(int index) => 1;
+            public int IndexOf(int index, int searchIndex, int selfLength, char* contents)
+                => contents[searchIndex] == arr[index] ? searchIndex : -1;
+        }
+
+        public static StringSplitResults Split(Arena arena, char* str, int strLength, char[] separators, int count = int.MaxValue, StringSplitOptions options = StringSplitOptions.None) {
+            if (separators == null || separators.Length == 0) {
+                return SplitWhiteSpace(arena, str, strLength, count, options);
+            }
+            return Split(arena, new CharPtrCharArraySeparator(separators), count, options, str, strLength);
+        }
+
+        public static StringSplitResults Split(Arena arena, char* str, int strLength, char[] separators, StringSplitOptions options) {
+            if (separators == null || separators.Length == 0) {
+                return SplitWhiteSpace(arena, str, int.MaxValue, options);
+            }
+            return Split(arena, new CharPtrCharArraySeparator(separators), int.MaxValue, options, str, strLength);
+        }
+
+        private readonly struct CharPtrCharSeparator : ISeparatorProvider {
+            private readonly char chr;
+
+            public CharPtrCharSeparator(char chr) {
+                this.chr = chr;
+            }
+
+            public int Count { get => 1; }
+            public bool IsNullOrEmpty(int index) => false;
+            public int LengthOf(int index) => 1;
+            public int IndexOf(int index, int searchIndex, int selfLength, char* contents)
+                => contents[searchIndex] == chr ? searchIndex : -1;
+        }
+
+        public static StringSplitResults Split(Arena arena, char* str, int strLength, char separator, int count = int.MaxValue, StringSplitOptions options = StringSplitOptions.None) {
+            return Split(arena, new CharPtrCharSeparator(separator), count, options, str, strLength);
+        }
+
+        public static StringSplitResults Split(Arena arena, char* str, int strLength, char separator, StringSplitOptions options) {
+            return Split(arena, new CharPtrCharSeparator(separator), int.MaxValue, options, str, strLength);
         }
         #endregion
 
