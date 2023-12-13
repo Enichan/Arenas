@@ -1888,6 +1888,15 @@ namespace Arenas {
         }
         #endregion
 
+        #region Concat
+        /// <summary>
+        /// Concatenates this string in this string's arena with another string.
+        /// </summary>
+        public ArenaString Concat(ArenaString other) {
+            return Concat(Arena, this, other);
+        }
+        #endregion
+
         // doable in place
         // enumerator
         // hashcode and equality
@@ -1897,13 +1906,12 @@ namespace Arenas {
         // IFormattable?
 
         // static methods
-        // Join
         // Compare(Ordinal)
-        // Concat
         // IsNullOrEmpty
         // IsNullOrWhiteSpace
 
-        public static ArenaString Concat(Arena arena, char* lhs, int lhsLength, char* rhs, int rhsLength) {
+        #region Concat/Join static
+        public static ArenaString Join(Arena arena, char* sep, int sepLength, char* lhs, int lhsLength, char* rhs, int rhsLength) {
             if (lhs == null) {
                 throw new ArgumentNullException(nameof(lhs));
             }
@@ -1915,13 +1923,25 @@ namespace Arenas {
             var contents = result.Contents;
 
             CharCopy(lhs, contents, lhsLength);
-            CharCopy(rhs, contents + lhsLength, rhsLength);
+            var length = lhsLength;
 
-            result.Length = lhsLength + rhsLength;
+            if (sep != null) {
+                CharCopy(sep, contents + length, sepLength);
+                length += sepLength;
+            }
+
+            CharCopy(rhs, contents + length, rhsLength);
+            length += rhsLength;
+
+            result.Length = length;
             return result;
         }
 
-        public static ArenaString Concat(Arena arena, ArenaString lhs, ArenaString rhs) {
+        public static ArenaString Concat(Arena arena, char* lhs, int lhsLength, char* rhs, int rhsLength) {
+            return Join(arena, null, 0, lhs, lhsLength, rhs, rhsLength);
+        }
+
+        public static ArenaString Join(Arena arena, ArenaString sep, ArenaString lhs, ArenaString rhs) {
             var lhsArena = lhs.Arena;
             if (lhsArena is null) {
                 throw new InvalidOperationException("Cannot concatenate ArenaStrings: string has not been properly initialized with arena reference");
@@ -1949,21 +1969,106 @@ namespace Arenas {
                 arena = lhsArena;
             }
 
-            return Concat(arena, lhsContents, lhsLength, rhsContents, rhsLength);
+            int sepLength = 0;
+            char* sepContents = sep.contents.Value;
+
+            if (sepContents != null) {
+                sepContents += contentsOffset;
+                sepLength = sep.Length;
+            }
+
+            return Join(arena, sepContents, sepLength, lhsContents, lhsLength, rhsContents, rhsLength);
+        }
+
+        public static ArenaString Join(Arena arena, ArenaString sep, ArenaString s0, ArenaString s1, ArenaString s2) {
+            return Join(arena, sep, Join(arena, sep, s0, s1), s2);
+        }
+
+        public static ArenaString Join(Arena arena, ArenaString sep, ArenaString s0, ArenaString s1, ArenaString s2, ArenaString s3) {
+            return Join(arena, sep, Join(arena, sep, Join(arena, sep, s0, s1), s2), s3);
+        }
+
+        public static ArenaString Join(Arena arena, ArenaString sep, ArenaString s0, ArenaString s1, ArenaString s2, ArenaString s3, ArenaString s4) {
+            return Join(arena, sep, Join(arena, sep, Join(arena, sep, Join(arena, sep, s0, s1), s2), s3), s4);
+        }
+
+        public static ArenaString Join(Arena arena, ArenaString sep, ArenaString s0, ArenaString s1, ArenaString s2, ArenaString s3, ArenaString s4, ArenaString s5) {
+            return Join(arena, sep, Join(arena, sep, Join(arena, sep, Join(arena, sep, Join(arena, sep, s0, s1), s2), s3), s4), s5);
+        }
+
+        public static ArenaString Concat(Arena arena, ArenaString lhs, ArenaString rhs) {
+            return Join(arena, default(ArenaString), lhs, rhs);
         }
 
         public static ArenaString Concat(Arena arena, ArenaString s0, ArenaString s1, ArenaString s2) {
-            return Concat(arena, Concat(arena, s0, s1), s2);
+            return Join(arena, default(ArenaString), Join(arena, default(ArenaString), s0, s1), s2);
         }
 
         public static ArenaString Concat(Arena arena, ArenaString s0, ArenaString s1, ArenaString s2, ArenaString s3) {
-            return Concat(arena, Concat(arena, Concat(arena, s0, s1), s2), s3);
+            return Join(arena, default(ArenaString), Join(arena, default(ArenaString), Join(arena, default(ArenaString), s0, s1), s2), s3);
         }
 
-        public static ArenaString Concat(Arena arena, IEnumerable<ArenaString> values) {
+        public static ArenaString Concat(Arena arena, ArenaString s0, ArenaString s1, ArenaString s2, ArenaString s3, ArenaString s4, ArenaString s5) {
+            return Join(arena, default(ArenaString), Join(arena, default(ArenaString), Join(arena, default(ArenaString), Join(arena, default(ArenaString), Join(arena, default(ArenaString), s0, s1), s2), s3), s4), s5);
+        }
+
+        public static ArenaString Join(Arena arena, string separator, ArenaString lhs, ArenaString rhs) {
+            var sep = new ArenaString(arena, separator);
+            try {
+                return Join(arena, sep, lhs, rhs);
+            }
+            finally {
+                sep.Free();
+            }
+        }
+
+        public static ArenaString Join(Arena arena, string separator, ArenaString s0, ArenaString s1, ArenaString s2) {
+            var sep = new ArenaString(arena, separator);
+            try {
+                return Join(arena, sep, Join(arena, sep, s0, s1), s2);
+            }
+            finally {
+                sep.Free();
+            }
+        }
+
+        public static ArenaString Join(Arena arena, string separator, ArenaString s0, ArenaString s1, ArenaString s2, ArenaString s3) {
+            var sep = new ArenaString(arena, separator);
+            try {
+                return Join(arena, sep, Join(arena, sep, Join(arena, sep, s0, s1), s2), s3);
+            }
+            finally {
+                sep.Free();
+            }
+        }
+
+        public static ArenaString Join(Arena arena, string separator, ArenaString s0, ArenaString s1, ArenaString s2, ArenaString s3, ArenaString s4) {
+            var sep = new ArenaString(arena, separator);
+            try {
+                return Join(arena, sep, Join(arena, sep, Join(arena, sep, Join(arena, sep, s0, s1), s2), s3), s4);
+            }
+            finally {
+                sep.Free();
+            }
+        }
+
+        public static ArenaString Join(Arena arena, string separator, ArenaString s0, ArenaString s1, ArenaString s2, ArenaString s3, ArenaString s4, ArenaString s5) {
+            var sep = new ArenaString(arena, separator);
+            try {
+                return Join(arena, sep, Join(arena, sep, Join(arena, sep, Join(arena, sep, Join(arena, sep, s0, s1), s2), s3), s4), s5);
+            }
+            finally {
+                sep.Free();
+            }
+        }
+
+        /// <summary>
+        /// Non-boxing version of Join when the enumerator is a struct
+        /// </summary>
+        public static ArenaString Join<TEnum>(Arena arena, ArenaString sep, TEnum enumerator) where TEnum : struct, IEnumerator<ArenaString> {
             var s = new ArenaString(arena, 0);
-            foreach (var v in values) {
-                var result = s.Concat(v);
+            while (enumerator.MoveNext()) {
+                var result = Join(arena, sep, s, enumerator.Current);
                 s.Free();
                 s = result;
             }
@@ -1971,19 +2076,50 @@ namespace Arenas {
         }
 
         /// <summary>
-        /// Non-boxing version of Concat when the enumerator and values are both structs
+        /// Non-boxing version of Concat when the enumerator is a struct
         /// </summary>
         public static ArenaString Concat<TEnum>(Arena arena, TEnum enumerator) where TEnum : struct, IEnumerator<ArenaString> {
+            return Join(arena, default(ArenaString), enumerator);
+        }
+
+        /// <summary>
+        /// Non-boxing version of Join when the enumerator is a struct
+        /// </summary>
+        public static ArenaString Join<TEnum>(Arena arena, string separator, TEnum enumerator) where TEnum : struct, IEnumerator<ArenaString> {
+            var sep = new ArenaString(arena, separator);
+            try {
+                return Join(arena, sep, enumerator);
+            }
+            finally {
+                sep.Free();
+            }
+        }
+
+        public static ArenaString Join(Arena arena, ArenaString sep, IEnumerable<ArenaString> values) {
             var s = new ArenaString(arena, 0);
-            while (enumerator.MoveNext()) {
-                var result = s.Concat(enumerator.Current);
+            foreach (var v in values) {
+                var result = Join(arena, sep, s, v);
                 s.Free();
                 s = result;
             }
             return s;
         }
 
-        public static ArenaString Concat(Arena arena, IEnumerable<object> values) {
+        public static ArenaString Concat(Arena arena, IEnumerable<ArenaString> values) {
+            return Join(arena, default(ArenaString), values);
+        }
+
+        public static ArenaString Join(Arena arena, string separator, IEnumerable<ArenaString> values) {
+            var sep = new ArenaString(arena, separator);
+            try {
+                return Join(arena, sep, values);
+            }
+            finally {
+                sep.Free();
+            }
+        }
+
+        public static ArenaString Join(Arena arena, ArenaString sep, IEnumerable<object> values) {
             var s = new ArenaString(arena, 0);
             foreach (var v in values) {
                 if (v is null) {
@@ -1991,14 +2127,14 @@ namespace Arenas {
                 }
 
                 if (v is ArenaString) {
-                    var result = s.Concat((ArenaString)v);
+                    var result = Join(arena, sep, s, (ArenaString)v);
                     s.Free();
                     s = result;
                 }
                 else {
                     var tmp = new ArenaString(arena, v.ToString());
                     try {
-                        var result = s.Concat(tmp);
+                        var result = Join(arena, sep, s, tmp);
                         s.Free();
                         s = result;
                     }
@@ -2010,14 +2146,61 @@ namespace Arenas {
             return s;
         }
 
-        ///// <summary>
-        ///// Non-boxing version of Concat when the enumerator and values are both structs
-        ///// </summary>
-        //public static ArenaString Concat<TEnum, TVal>(Arena arena, TEnum enumerator) where TEnum : struct, IEnumerator<TVal> where TVal : struct {
-        //    while (enumerator.MoveNext()) {
+        public static ArenaString Concat(Arena arena, IEnumerable<object> values) {
+            return Join(arena, default(ArenaString), values);
+        }
 
-        //    }
-        //}
+
+        public static ArenaString Join(Arena arena, string separator, IEnumerable<object> values) {
+            var sep = new ArenaString(arena, separator);
+            try {
+                return Join(arena, sep, values);
+            }
+            finally {
+                sep.Free();
+            }
+        }
+
+        /// <summary>
+        /// Non-boxing version of Join when the enumerator and values are both structs
+        /// </summary>
+        public static ArenaString Join<TEnum, TVal>(Arena arena, ArenaString sep, TEnum enumerator) where TEnum : struct, IEnumerator<TVal> where TVal : struct {
+            var s = new ArenaString(arena, 0);
+            while (enumerator.MoveNext()) {
+                var v = enumerator.Current;
+                var tmp = new ArenaString(arena, v.ToString());
+                try {
+                    var result = Join(arena, sep, s, tmp);
+                    s.Free();
+                    s = result;
+                }
+                finally {
+                    tmp.Free();
+                }
+            }
+            return s;
+        }
+
+        /// <summary>
+        /// Non-boxing version of Concat when the enumerator and values are both structs
+        /// </summary>
+        public static ArenaString Concat<TEnum, TVal>(Arena arena, TEnum enumerator) where TEnum : struct, IEnumerator<TVal> where TVal : struct {
+            return Join<TEnum, TVal>(arena, default(ArenaString), enumerator);
+        }
+
+        /// <summary>
+        /// Non-boxing version of Join when the enumerator and values are both structs
+        /// </summary>
+        public static ArenaString Join<TEnum, TVal>(Arena arena, string separator, TEnum enumerator) where TEnum : struct, IEnumerator<TVal> where TVal : struct {
+            var sep = new ArenaString(arena, separator);
+            try {
+                return Join<TEnum, TVal>(arena, sep, enumerator);
+            }
+            finally {
+                sep.Free();
+            }
+        }
+        #endregion
 
         private static void CharCopy(char* source, char* dest, int length) {
             if (length > 0) {
@@ -2038,13 +2221,6 @@ namespace Arenas {
 
         public UnmanagedRef<char> GetDataReference() {
             return contents;
-        }
-
-        /// <summary>
-        /// Concatenates this string in this string's arena with another string.
-        /// </summary>
-        public ArenaString Concat(ArenaString other) {
-            return Concat(Arena, this, other);
         }
 
         public void Free() {
