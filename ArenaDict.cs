@@ -12,7 +12,7 @@ namespace Arenas {
     // TODO: Custom IEqualityComparer
     [DebuggerTypeProxy(typeof(ArenaDictDebugView<,>))]
     public unsafe struct ArenaDict<TKey, TValue> : IDictionary<TKey, TValue>, IDisposable where TKey : unmanaged where TValue : unmanaged {
-        private const int defaultCapacity = 8;
+        private const int defaultCapacity = 4;
         private const uint fibHashMagic = 2654435769;
         private const int noneHashCode = 0;
         private const int nullOffset = 0;
@@ -32,6 +32,10 @@ namespace Arenas {
                 throw new ArgumentNullException(nameof(arena));
             }
 
+            if (capacity < 0) {
+                capacity = defaultCapacity;
+            }
+
             var typeK = TypeInfo.GenerateTypeInfo<TKey>();
             var typeV = TypeInfo.GenerateTypeInfo<TValue>();
 
@@ -46,13 +50,16 @@ namespace Arenas {
             info = arena.Allocate(new UnmanagedDict());
 
             // must have positive power of two capacity
-            if (capacity <= 0) {
-                capacity = defaultCapacity;
-            }
+            ulong powTwo = (uint)capacity;
+            if (!MemHelper.IsPowerOfTwo(powTwo)) {
+                if (capacity <= 0) {
+                    capacity = defaultCapacity;
+                }
 
-            var powTwo = MemHelper.NextPowerOfTwo((ulong)capacity);
-            if (powTwo > int.MaxValue) {
-                throw new ArgumentOutOfRangeException(nameof(capacity));
+                powTwo = MemHelper.NextPowerOfTwo((ulong)capacity);
+                if (powTwo > int.MaxValue) {
+                    throw new ArgumentOutOfRangeException(nameof(capacity));
+                }
             }
 
             // get the shift amount from the capacity which is now a power of two

@@ -64,6 +64,10 @@ namespace Arenas {
             return v;
         }
 
+        public static bool IsPowerOfTwo(ulong v) {
+            return powerOfTwoLeadingZeros.ContainsKey(v);
+        }
+
         public static int AlignFloor(int addr, int size) {
             return addr & (~(size - 1));
         }

@@ -34,7 +34,7 @@ namespace Arenas {
             if (pageSize < MinimumPageSize) {
                 throw new ArgumentOutOfRangeException(nameof(pageSize), $"Arena page size must be greater than or equal to {MinimumPageSize} bytes");
             }
-            if ((uint)pageSize != MemHelper.NextPowerOfTwo((uint)pageSize)) {
+            if (!MemHelper.IsPowerOfTwo((uint)pageSize)) {
                 throw new ArgumentOutOfRangeException(nameof(pageSize), $"Arena page size must be a power of two");
             }
 
@@ -227,29 +227,35 @@ namespace Arenas {
         /// <param name="sizeBytes">The approximate amount of bytes you're requesting from the arena</param>
         /// <returns>An UnmanagedRef&lt;byte&gt; instance which may contain fewer or more bytes than requested</returns>
         public UnmanagedRef<byte> AllocRoughly(int sizeBytes) {
+            if (sizeBytes < 0) {
+                throw new ArgumentOutOfRangeException(nameof(sizeBytes));
+            }
+
             if (sizeBytes < sizeof(ulong)) {
                 sizeBytes = sizeof(ulong);
             }
 
-            var nextPowerOfTwo = MemHelper.NextPowerOfTwo((uint)sizeBytes);
-            var prevPowerOfTwo = nextPowerOfTwo >> 1;
+            if (!MemHelper.IsPowerOfTwo((uint)sizeBytes)) {
+                var nextPowerOfTwo = MemHelper.NextPowerOfTwo((uint)sizeBytes);
+                var prevPowerOfTwo = nextPowerOfTwo >> 1;
 
-            int powerOfTwo;
-            if (nextPowerOfTwo - (uint)sizeBytes <= (uint)sizeBytes - prevPowerOfTwo && nextPowerOfTwo <= int.MaxValue) {
-                powerOfTwo = (int)nextPowerOfTwo;
-            }
-            else {
-                powerOfTwo = (int)prevPowerOfTwo;
-            }
+                int powerOfTwo;
+                if (nextPowerOfTwo - (uint)sizeBytes <= (uint)sizeBytes - prevPowerOfTwo && nextPowerOfTwo <= int.MaxValue) {
+                    powerOfTwo = (int)nextPowerOfTwo;
+                }
+                else {
+                    powerOfTwo = (int)prevPowerOfTwo;
+                }
 
-            var up = MemHelper.AlignCeil(sizeBytes, powerOfTwo);
-            var down = MemHelper.AlignFloor(sizeBytes, powerOfTwo);
+                var up = MemHelper.AlignCeil(sizeBytes, powerOfTwo);
+                var down = MemHelper.AlignFloor(sizeBytes, powerOfTwo);
 
-            if (Math.Abs(up - sizeBytes) <= Math.Abs(sizeBytes - down) || down == 0) {
-                sizeBytes = up;
-            }
-            else {
-                sizeBytes = down;
+                if (Math.Abs(up - sizeBytes) <= Math.Abs(sizeBytes - down) || down == 0) {
+                    sizeBytes = up;
+                }
+                else {
+                    sizeBytes = down;
+                }
             }
 
             if (sizeBytes >= 512) {
