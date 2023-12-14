@@ -64,6 +64,10 @@ namespace Arenas {
                 throw new ArgumentNullException(nameof(ptr));
             }
 
+            if (id == ArenaID.Empty) {
+                throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr<T>(IntPtr) did not point to a valid item.");
+            }
+
             var header = ItemHeader.GetHeader(ptr);
 
             Type type;
@@ -74,17 +78,20 @@ namespace Arenas {
                 throw new InvalidOperationException($"Type mismatch in header for pointer in UnmanagedRefFromPtr<T>(IntPtr), types do not match: type {typeof(T)} expected, but item was of type {type}.");
             }
 
-            var version = header.Version.SetArenaID(id);
-            if (!version.Valid) {
+            if (header.Version.Arena != id || !header.Version.Item.Valid) {
                 throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr<T>(IntPtr) did not point to a valid item.");
             }
 
-            return new UnmanagedRef<T>((T*)ptr, version, header.Size / sizeof(T));
+            return new UnmanagedRef<T>((T*)ptr, header.Version, header.Size / sizeof(T));
         }
 
         public UnmanagedRef UnmanagedRefFromPtr(IntPtr ptr) {
             if (ptr == IntPtr.Zero) {
                 throw new ArgumentNullException(nameof(ptr));
+            }
+
+            if (id == ArenaID.Empty) {
+                throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr<T>(IntPtr) did not point to a valid item.");
             }
 
             var header = ItemHeader.GetHeader(ptr);
@@ -94,12 +101,11 @@ namespace Arenas {
                 throw new InvalidOperationException("Invalid type in header for pointer in UnmanagedRefFromPtr(IntPtr), address may be invalid.");
             }
 
-            var version = header.Version.SetArenaID(id);
-            if (!version.Valid) {
-                throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr(IntPtr) did not point to a valid item.");
+            if (header.Version.Arena != id || !header.Version.Item.Valid) {
+                throw new InvalidOperationException("Pointer in UnmanagedRefFromPtr<T>(IntPtr) did not point to a valid item.");
             }
 
-            return new UnmanagedRef(ptr, version, header.Size / info.Size);
+            return new UnmanagedRef(ptr, header.Version, header.Size / info.Size);
         }
 
         private Page AllocPage(int size) {
