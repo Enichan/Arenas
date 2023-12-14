@@ -61,6 +61,11 @@ namespace Arenas {
                     throw new ArgumentOutOfRangeException(nameof(capacity));
                 }
             }
+            else if (powTwo == 1) {
+                // capacity 1 doesn't really work since the rebalance count is 0
+                // so it'll rebalance to 2 items as soon as you use it at all
+                powTwo = 2;
+            }
 
             // get the shift amount from the capacity which is now a power of two
             // this is used to shift the hashcode into a backing array index after
