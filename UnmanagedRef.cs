@@ -44,6 +44,35 @@ namespace Arenas {
             Reference.CopyTo(dest, destIndex, sourceIndex, count, elementCount, typeof(T));
         }
 
+        public void CopyTo(UnmanagedRef<T> dest) {
+            var elementCount = ElementCount;
+            Reference.CopyTo(dest.Value, dest.ElementCount, 0, 0, elementCount, elementCount);
+        }
+
+        public void CopyTo(UnmanagedRef<T> dest, int destIndex) {
+            var elementCount = ElementCount;
+            Reference.CopyTo(dest.Value, dest.ElementCount, destIndex, 0, elementCount, elementCount);
+        }
+
+        public void CopyTo(UnmanagedRef<T> dest, int destIndex, int sourceIndex, int count) {
+            var elementCount = ElementCount;
+            Reference.CopyTo(dest.Value, dest.ElementCount, destIndex, sourceIndex, count, -1);
+        }
+
+        public void CopyTo(T* dest, int destLength) {
+            var elementCount = ElementCount;
+            Reference.CopyTo(dest, destLength, 0, 0, elementCount, elementCount);
+        }
+
+        public void CopyTo(T* dest, int destLength, int destIndex) {
+            var elementCount = ElementCount;
+            Reference.CopyTo(dest, destLength, destIndex, 0, elementCount, elementCount);
+        }
+
+        public void CopyTo(T* dest, int destLength, int destIndex, int sourceIndex, int count) {
+            Reference.CopyTo(dest, destLength, destIndex, sourceIndex, count, -1);
+        }
+
         public T[] ToArray() {
             if (!HasValue) {
                 throw new NullReferenceException($"Error in UnmanagedRef<{typeof(T)}>.ToArray: HasValue was false");
@@ -177,17 +206,57 @@ namespace Arenas {
             CopyTo(dest, destIndex, sourceIndex, count, -1);
         }
 
+        public void CopyTo<T>(UnmanagedRef<T> dest) where T : unmanaged {
+            var elementCount = ElementCount;
+            CopyTo(dest.Value, dest.ElementCount, 0, 0, elementCount, elementCount);
+        }
+
+        public void CopyTo<T>(UnmanagedRef<T> dest, int destIndex) where T : unmanaged {
+            var elementCount = ElementCount;
+            CopyTo(dest.Value, dest.ElementCount, destIndex, 0, elementCount, elementCount);
+        }
+
+        public void CopyTo<T>(UnmanagedRef<T> dest, int destIndex, int sourceIndex, int count) where T : unmanaged {
+            CopyTo(dest.Value, dest.ElementCount, destIndex, sourceIndex, count, -1);
+        }
+
+        public void CopyTo<T>(T* dest, int destLength) where T : unmanaged {
+            var elementCount = ElementCount;
+            CopyTo(dest, destLength, 0, 0, elementCount, elementCount);
+        }
+
+        public void CopyTo<T>(T* dest, int destLength, int destIndex) where T : unmanaged {
+            var elementCount = ElementCount;
+            CopyTo(dest, destLength, destIndex, 0, elementCount, elementCount);
+        }
+
+        public void CopyTo<T>(T* dest, int destLength, int destIndex, int sourceIndex, int count) where T : unmanaged {
+            CopyTo(dest, destLength, destIndex, sourceIndex, count, -1);
+        }
+
         internal void CopyTo<T>(T[] dest, int destIndex, int sourceIndex, int count, int elementCount, Type type = null) where T : unmanaged {
             if (dest is null) {
+                throw new ArgumentNullException(nameof(dest));
+            }
+            fixed (T* destPtr = dest) {
+                CopyTo(destPtr, dest.Length, destIndex, sourceIndex, count, elementCount, type);
+            }
+        }
+
+        internal void CopyTo<T>(T* dest, int destLength, int destIndex, int sourceIndex, int count, int elementCount, Type type = null) where T : unmanaged {
+            if (dest == null) {
                 throw new ArgumentNullException(nameof(dest));
             }
             if (!HasValue) {
                 throw new NullReferenceException($"Error in UnmanagedRef.CopyTo: HasValue was false");
             }
+            if (destLength < 0) {
+                throw new ArgumentOutOfRangeException(nameof(destLength));
+            }
             if (count < 0) {
                 throw new ArgumentOutOfRangeException(nameof(count));
             }
-            if (destIndex < 0 || destIndex + count > dest.Length) {
+            if (destIndex < 0 || destIndex + count > destLength) {
                 throw new ArgumentOutOfRangeException(nameof(destIndex));
             }
 
