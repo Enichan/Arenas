@@ -244,9 +244,6 @@ namespace Arenas {
         }
 
         internal void CopyTo<T>(T* dest, int destLength, int destIndex, int sourceIndex, int count, int elementCount, Type type = null) where T : unmanaged {
-            if (dest == null) {
-                throw new ArgumentNullException(nameof(dest));
-            }
             if (!HasValue) {
                 throw new NullReferenceException($"Error in UnmanagedRef.CopyTo: HasValue was false");
             }
@@ -266,6 +263,14 @@ namespace Arenas {
 
             if (sourceIndex < 0 || sourceIndex + count > elementCount) {
                 throw new ArgumentOutOfRangeException(nameof(sourceIndex));
+            }
+
+            if (count == 0) {
+                return;
+            }
+
+            if (dest == null) {
+                throw new ArgumentNullException(nameof(dest));
             }
 
             type = type ?? Type;
