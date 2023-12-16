@@ -1903,6 +1903,13 @@ namespace Arenas {
 
         #region Concat/Join static
         public static ArenaString Join(Arena arena, char* sep, int sepLength, char* lhs, int lhsLength, char* rhs, int rhsLength) {
+            if (sepLength < 0) {
+                throw new ArgumentOutOfRangeException(nameof(sepLength));
+            }
+            else if (sepLength > 0 && sep == null) {
+                throw new ArgumentNullException(nameof(sep));
+            }
+
             if (lhs == null) {
                 throw new ArgumentNullException(nameof(lhs));
             }
@@ -1910,13 +1917,20 @@ namespace Arenas {
                 throw new ArgumentNullException(nameof(rhs));
             }
 
-            var result = new ArenaString(arena, lhsLength + rhsLength);
+            if (lhsLength < 0) {
+                throw new ArgumentOutOfRangeException(nameof(lhsLength));
+            }
+            if (rhsLength < 0) {
+                throw new ArgumentOutOfRangeException(nameof(rhsLength));
+            }
+
+            var result = new ArenaString(arena, lhsLength + rhsLength + sepLength);
             var contents = result.Contents;
 
             CharCopy(lhs, contents, lhsLength);
             var length = lhsLength;
 
-            if (sep != null) {
+            if (sep != null && sepLength > 0) {
                 CharCopy(sep, contents + length, sepLength);
                 length += sepLength;
             }
